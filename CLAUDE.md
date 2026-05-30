@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+@CONVENTIONS.md
+
 ## What this is
 
 `c3-domain-manager` analyzes Construct 3 projects through a domain-driven-design lens. It reads a `domain-config.json` from the *target* project's root (the current working directory, **not** this repo), classifies the project's `eventSheets/`, `layouts/`, and `scripts/` files into named domains, then produces a markdown domain index, health/coupling metrics, boundary validation, glossary collision checks, and a context map. The same capabilities are exposed both as a CLI and as an MCP server (stdio).

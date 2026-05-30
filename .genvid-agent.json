@@ -1,0 +1,19 @@
+{
+  "project": {
+    "name": "c3-domain-manager",
+    "description": "Analyzes Construct 3 projects through a domain-driven-design lens: classifies eventSheets/layouts/scripts into named domains and produces a domain index, health/coupling metrics, boundary validation, glossary checks, and a context map. Exposed as both a CLI and an MCP server.",
+    "languages": ["typescript"]
+  },
+  "commands": {
+    "test": "npm test",
+    "lint": "npm run lint",
+    "build": "npm run build",
+    "validate": "npm run lint && npm run typecheck && npm test"
+  },
+  "repo": {
+    "host": "github",
+    "default_branch": "main"
+  },
+  "features": {},
+  "paths": {}
+}
