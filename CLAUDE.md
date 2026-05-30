@@ -21,17 +21,11 @@ Run a single test file: `npx mocha --timeout 5000 --import=tsx --require ./test/
 
 Note: scripts are invoked with `npm` locally, but CI uses `pnpm` for the same script names.
 
-## Dependency setup (required before install)
+## Key dependencies
 
-Two dependencies — `genvid-mcp-utils` and `c3source` — are private leaf packages installed from local tarballs (`"file:.packages/*.tgz"`), not from a registry. They are **not** in the repo (`.packages/` is gitignored). Fetch them before `npm install`:
+Two dependencies are published public packages on npm, installed normally via `npm install` (no special setup):
 
-```bash
-npm run download-deps   # az CLI must be logged in with Azure Blob Storage access
-```
-
-`scripts/download-deps.sh` reads `name=version` lines from `.packages-version` and pulls `<name>/tags/<version>/<name>-<version>.tgz` from the `cordova` blob container into `.packages/<name>.tgz`. If you bump a dependency, edit `.packages-version` and delete the stale `.packages/*.tgz` (the script skips files that already exist).
-
-`c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`) and the `EventSheet`/`Layout` types. `genvid-mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`).
+`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`) and the `EventSheet`/`Layout` types. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`).
 
 ## TypeScript / module setup
 

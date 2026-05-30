@@ -34,14 +34,6 @@ commands:
               --tenant=${AZURE_SP_TENANT} \
               --password=${AZURE_SP_PASSWORD}
 
-  download-deps:
-    description: Download leaf package dependencies from Azure
-    steps:
-      - az-login-with-sp
-      - run:
-          name: Download dependencies
-          command: bash scripts/download-deps.sh
-
 jobs:
   build-and-test:
     docker:
@@ -50,8 +42,6 @@ jobs:
     steps:
       - onepassword-setup
       - checkout
-      - azure-cli/install
-      - download-deps
       - run:
           name: Install dependencies
           command: pnpm install --no-frozen-lockfile

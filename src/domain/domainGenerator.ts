@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
 import path from "node:path";
-import { find_all_eventsheets_path, find_all_layouts_path } from "c3source";
-import type { EventSheet, Layout } from "c3source";
+import { find_all_eventsheets_path, find_all_layouts_path } from "@genvid/c3source";
+import type { EventSheet, Layout } from "@genvid/c3source";
 import { classifyFile } from "./classification.js";
 import { extractIncludes, extractFunctions } from "./extraction.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData } from "./types.js";
-import type { Logger } from "genvid-mcp-utils";
+import type { Logger } from "@genvid/mcp-utils";
 
 export function loadConfig(configPath: string): DomainConfig {
   const content = fs.readFileSync(configPath, "utf-8");
