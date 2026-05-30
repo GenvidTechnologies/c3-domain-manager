@@ -553,7 +553,7 @@ export async function startServer(projectDir?: string): Promise<void> {
       console.error(`[c3-domain-manager] Auto-generation complete`);
     } catch (e) {
       console.error(`[c3-domain-manager] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
-      console.error(`[c3-domain-manager] Run 'npm run generate-domain' manually to generate domain index`);
+      console.error(`[c3-domain-manager] Run 'npx c3-domain-manager generate' manually to generate domain index`);
     }
   }
   console.error(`[c3-domain-manager] Starting server in ${PROJECT_ROOT}`);
