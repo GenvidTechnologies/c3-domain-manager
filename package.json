@@ -1,5 +1,5 @@
 {
-	"name": "domain-manager",
+	"name": "c3-domain-manager",
 	"version": "0.1.0",
 	"license": "MIT-0",
 	"author": "Genvid Technologies, inc. <support@genvidtech.com>",
@@ -7,7 +7,7 @@
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"bin": {
-		"domain-manager": "./dist/cli.js"
+		"c3-domain-manager": "./dist/cli.js"
 	},
 	"exports": {
 		".": "./src/index.ts",

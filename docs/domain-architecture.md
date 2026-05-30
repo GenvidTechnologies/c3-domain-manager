@@ -10,7 +10,7 @@ A domain in this context is a named grouping of source files (event sheets, layo
 - Measure coupling between features
 - Enforce architectural boundaries
 
-The groupings are declared in `domain-config.json` at the project root. The `domain-manager` package reads this file to classify files, generate a browsable index, and run health and boundary checks.
+The groupings are declared in `domain-config.json` at the project root. The `c3-domain-manager` package reads this file to classify files, generate a browsable index, and run health and boundary checks.
 
 ## Primary domains vs shared subdomains
 
@@ -115,7 +115,7 @@ File type roots:
 
 Example: a file at `eventSheets/Battle/Skills/ActiveSkills.json` with config `eventSheetDirs: ["Battle"]` matches `Battle/` and is classified under that domain. If a second domain declares `eventSheetDirs: ["Battle/Skills"]`, the longer prefix wins and the file goes to the second domain.
 
-Files that match no rule are "uncategorized". Run `domain-manager list-uncategorized` to find them.
+Files that match no rule are "uncategorized". Run `c3-domain-manager list-uncategorized` to find them.
 
 ## Strategic classification
 
@@ -129,7 +129,7 @@ The optional `strategy` field on a domain or subdomain marks its DDD strategic r
 
 ## Generated domain index
 
-Running `domain-manager generate` (or `regenerate` via MCP) writes files to `extracted/domain-index/`:
+Running `c3-domain-manager generate` (or `regenerate` via MCP) writes files to `extracted/domain-index/`:
 
 - `index.md` — master index listing all domains with file counts and descriptions
 - `<DomainName>.md` — per-domain page with:
@@ -166,6 +166,6 @@ Each domain can define a `glossary` map of terms to definitions. `glossary-check
 
 ## Maintenance
 
-- After adding or renaming files, run `domain-manager list-uncategorized` to confirm coverage
-- After deleting files, run `domain-manager list-stale-overrides` to clean up orphaned override entries
-- Regenerate the domain index after any `domain-config.json` change: `domain-manager generate`
+- After adding or renaming files, run `c3-domain-manager list-uncategorized` to confirm coverage
+- After deleting files, run `c3-domain-manager list-stale-overrides` to clean up orphaned override entries
+- Regenerate the domain index after any `domain-config.json` change: `c3-domain-manager generate`

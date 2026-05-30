@@ -27,7 +27,7 @@ let PROJECT_ROOT = process.cwd();
 let EXTRACTED_DIR = path.join(PROJECT_ROOT, "extracted");
 
 const server = new McpServer(
-  { name: "domain-manager", version: "1.0.0" },
+  { name: "c3-domain-manager", version: "1.0.0" },
   { capabilities: { logging: {}, resources: {} } },
 );
 
@@ -57,7 +57,7 @@ function toForwardSlash(p: string): string {
 }
 
 function emitLog(level: "debug" | "info" | "warning" | "error", message: string): void {
-  server.sendLoggingMessage({ level, logger: "domain-manager", data: message }).catch(() => {});
+  server.sendLoggingMessage({ level, logger: "c3-domain-manager", data: message }).catch(() => {});
 }
 
 function isWithinDir(fullPath: string, dir: string): boolean {
@@ -545,22 +545,22 @@ export async function startServer(projectDir?: string): Promise<void> {
 
   const domainIndexPath = path.join(EXTRACTED_DIR, "domain-index");
   if (!fs.existsSync(domainIndexPath)) {
-    console.error(`[domain-manager] domain-index not found — auto-generating...`);
+    console.error(`[c3-domain-manager] domain-index not found — auto-generating...`);
     try {
-      const log: Logger = (...args) => console.error(`[domain-manager]   ${args.map(String).join(" ")}`);
+      const log: Logger = (...args) => console.error(`[c3-domain-manager]   ${args.map(String).join(" ")}`);
       const configPath = path.join(PROJECT_ROOT, "domain-config.json");
       generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, configPath, log);
-      console.error(`[domain-manager] Auto-generation complete`);
+      console.error(`[c3-domain-manager] Auto-generation complete`);
     } catch (e) {
-      console.error(`[domain-manager] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
-      console.error(`[domain-manager] Run 'npm run generate-domain' manually to generate domain index`);
+      console.error(`[c3-domain-manager] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
+      console.error(`[c3-domain-manager] Run 'npm run generate-domain' manually to generate domain index`);
     }
   }
-  console.error(`[domain-manager] Starting server in ${PROJECT_ROOT}`);
+  console.error(`[c3-domain-manager] Starting server in ${PROJECT_ROOT}`);
 
   // Graceful shutdown
   function shutdown() {
-    console.error("[domain-manager] Shutting down...");
+    console.error("[c3-domain-manager] Shutting down...");
     server.close().catch(() => {});
     process.exit(0);
   }

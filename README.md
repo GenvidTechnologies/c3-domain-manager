@@ -1,4 +1,4 @@
-# domain-manager
+# c3-domain-manager
 
 Domain-driven design analysis for Construct 3 projects. Classifies source files into domains, parses event sheet dependencies, and provides health and boundary validation — all driven by a single `domain-config.json` file.
 
@@ -71,7 +71,7 @@ At the root of your Construct 3 project:
 Run from your project root:
 
 ```bash
-npx domain-manager generate
+npx c3-domain-manager generate
 ```
 
 This writes markdown pages to `extracted/domain-index/`.
@@ -79,7 +79,7 @@ This writes markdown pages to `extracted/domain-index/`.
 ### 3. Check coverage
 
 ```bash
-npx domain-manager list-uncategorized
+npx c3-domain-manager list-uncategorized
 ```
 
 Lists files not covered by any domain mapping.
@@ -104,7 +104,7 @@ The MCP server exposes 12 tools over stdio, suitable for use with Claude or any 
 ### Starting the server
 
 ```bash
-npx domain-manager server
+npx c3-domain-manager server
 ```
 
 Or in an MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
@@ -112,9 +112,9 @@ Or in an MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "domain-manager": {
+    "c3-domain-manager": {
       "command": "npx",
-      "args": ["domain-manager", "server"],
+      "args": ["c3-domain-manager", "server"],
       "cwd": "/path/to/your/c3-project"
     }
   }
@@ -171,7 +171,7 @@ import {
   computeDomainData,
   listUncategorized,
   listStaleOverrides,
-} from "domain-manager";
+} from "c3-domain-manager";
 ```
 
 Key exports from `src/index.ts`:

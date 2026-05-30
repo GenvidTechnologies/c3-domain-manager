@@ -15,7 +15,7 @@ const CONFIG_PATH = path.join(PROJECT_ROOT, "domain-config.json");
 yargs(hideBin(process.argv))
   .command(
     "server",
-    "Start the domain-manager MCP server",
+    "Start the c3-domain-manager MCP server",
     () => {},
     async () => {
       const { startServer } = await import("./mcp/server.js");

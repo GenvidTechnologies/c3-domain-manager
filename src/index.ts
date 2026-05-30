@@ -1,4 +1,4 @@
-// Public API for domain-manager package
+// Public API for c3-domain-manager package
 
 export * from "./domain/types.js";
 export * from "./domain/classification.js";
