@@ -20,16 +20,16 @@ Domain-driven design analysis for Construct 3 projects. Classifies source files 
 
 ## Installation
 
-This package is distributed as part of a monorepo workspace. To use it standalone, install its dependencies:
+Install from npm:
 
 ```bash
-npm install
+npm install @genvid/c3-domain-manager
 ```
 
-Or with pnpm:
+Or run the CLI without installing:
 
 ```bash
-pnpm install
+npx @genvid/c3-domain-manager generate
 ```
 
 ## Quick start
@@ -71,7 +71,7 @@ At the root of your Construct 3 project:
 Run from your project root:
 
 ```bash
-npx c3-domain-manager generate
+npx @genvid/c3-domain-manager generate
 ```
 
 This writes markdown pages to `extracted/domain-index/`.
@@ -79,7 +79,7 @@ This writes markdown pages to `extracted/domain-index/`.
 ### 3. Check coverage
 
 ```bash
-npx c3-domain-manager list-uncategorized
+npx @genvid/c3-domain-manager list-uncategorized
 ```
 
 Lists files not covered by any domain mapping.
@@ -104,7 +104,7 @@ The MCP server exposes 12 tools over stdio, suitable for use with Claude or any 
 ### Starting the server
 
 ```bash
-npx c3-domain-manager server
+npx @genvid/c3-domain-manager server
 ```
 
 Or in an MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
@@ -114,7 +114,7 @@ Or in an MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
   "mcpServers": {
     "c3-domain-manager": {
       "command": "npx",
-      "args": ["c3-domain-manager", "server"],
+      "args": ["@genvid/c3-domain-manager", "server"],
       "cwd": "/path/to/your/c3-project"
     }
   }
@@ -171,7 +171,7 @@ import {
   computeDomainData,
   listUncategorized,
   listStaleOverrides,
-} from "c3-domain-manager";
+} from "@genvid/c3-domain-manager";
 ```
 
 Key exports from `src/index.ts`:

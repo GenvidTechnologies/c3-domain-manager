@@ -1,17 +1,39 @@
 {
-	"name": "c3-domain-manager",
+	"name": "@genvid/c3-domain-manager",
 	"version": "0.1.0",
+	"description": "Analyzes Construct 3 projects through a domain-driven-design lens: classifies eventSheets/layouts/scripts into named domains and produces a domain index, health/coupling metrics, boundary validation, glossary checks, and a context map. Exposed as both a CLI and an MCP server.",
 	"license": "MIT-0",
 	"author": "Genvid Technologies, inc. <support@genvidtech.com>",
+	"homepage": "https://github.com/genvid-holdings/c3-domain-manager#readme",
+	"bugs": "https://github.com/genvid-holdings/c3-domain-manager/issues",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/genvid-holdings/c3-domain-manager.git"
+	},
+	"keywords": [
+		"construct3",
+		"construct",
+		"domain-driven-design",
+		"ddd",
+		"mcp",
+		"model-context-protocol",
+		"static-analysis"
+	],
 	"type": "module",
-	"main": "./src/index.ts",
-	"types": "./src/index.ts",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"bin": {
 		"c3-domain-manager": "./dist/cli.js"
 	},
 	"exports": {
-		".": "./src/index.ts",
-		"./mcp": "./src/mcp/server.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./mcp": {
+			"types": "./dist/mcp/server.d.ts",
+			"default": "./dist/mcp/server.js"
+		}
 	},
 	"files": [
 		"dist",
@@ -20,21 +42,11 @@
 		"README.md"
 	],
 	"publishConfig": {
-		"main": "./dist/index.js",
-		"types": "./dist/index.d.ts",
-		"exports": {
-			".": {
-				"types": "./dist/index.d.ts",
-				"default": "./dist/index.js"
-			},
-			"./mcp": {
-				"types": "./dist/mcp/server.d.ts",
-				"default": "./dist/mcp/server.js"
-			}
-		}
+		"access": "public"
 	},
 	"scripts": {
 		"build": "tsc && node -e \"const fs=require('fs');const f='dist/cli.js';const c=fs.readFileSync(f,'utf8');if(!c.startsWith('#!')){fs.writeFileSync(f,'#!/usr/bin/env node\\n'+c)}\"",
+		"prepack": "npm run build",
 		"test": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts 'test/**/*.test.ts' --exit",
 		"lint": "eslint --ext .ts --max-warnings 0 src/ test/",
 		"typecheck": "tsc -p tsconfig.test.json --noEmit"
