@@ -23,6 +23,8 @@ Run a single test file: `npx mocha --timeout 5000 --import=tsx --require ./test/
 
 Note: both local development and CI use `npm` for these script names. CI runs the shared `genvid-public-ci` Node gate (`.github/workflows/ci.yml`).
 
+**Cutting a release:** see `docs/releasing.md`. In short — bump the version in `package.json` + `package-lock.json`, commit `chore: Release X.Y.Z`, push a lightweight `vX.Y.Z` tag; the tag push triggers `.github/workflows/publish.yml` (OIDC trusted publish to npm).
+
 ## Key dependencies
 
 Two dependencies are published public packages on npm, installed normally via `npm install` (no special setup):
@@ -32,6 +34,7 @@ Two dependencies are published public packages on npm, installed normally via `n
 ## TypeScript / module setup
 
 - Pure ESM (`"type": "module"`), `NodeNext` resolution, Node >= 22. Relative imports **must** use `.js` extensions even though sources are `.ts`.
+- **Reading the package's own files at runtime:** `process.cwd()` is the *target* Construct 3 project, **not** this package — `cli.ts`/`server.ts` set `PROJECT_ROOT = process.cwd()` for exactly that reason. To read a file shipped *with* `c3-domain-manager` itself (e.g. `package.json` for the CLI `--version`), resolve it relative to the compiled module via `path.dirname(fileURLToPath(import.meta.url))`, **never** `cwd`. The compiled entry is `dist/cli.js`, so the package root is one level up (`../package.json`). Yargs' own version auto-detection does *not* find it — wire `.version()` explicitly (this was the `--version: "unknown"` bug, issue #3).
 - The package entry points (`main`/`types`/`exports`) point at the compiled `dist/*.js`/`*.d.ts` directly. Development never imports the package by its own name (tests use relative `.js` paths), so there's no dev/publish entry-point swap — `dist/` is built by `prepack` (and the CI gate) before anything consumes those paths. `publishConfig` holds only `{ "access": "public" }`.
 - **Publish pitfall:** keep `main`/`types`/`exports` at the **top level** pointing at `./dist/...`; do **not** move them into `publishConfig`. npm 11.x no longer applies `publishConfig` field overrides for entry points — it would ship the top-level values and warn "Unknown publishConfig config", so a package that hides its `dist/` paths inside `publishConfig` publishes source-pointing entry points that are unresolvable under `NodeNext` (this class of bug broke `@genvid/c3source@0.3.0`, fixed in 0.3.1). Verify against the packed manifest (`npm pack`), not the dry-run notice alone.
 - Two tsconfigs: `tsconfig.json` (composite, `src/` only, emits `dist/`) drives the build; `tsconfig.test.json` (`noEmit`, includes `test/`) drives `typecheck`.
