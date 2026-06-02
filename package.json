@@ -44,6 +44,9 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"overrides": {
+		"serialize-javascript": "^7.0.5"
+	},
 	"scripts": {
 		"build": "tsc && node -e \"const fs=require('fs');const f='dist/cli.js';const c=fs.readFileSync(f,'utf8');if(!c.startsWith('#!')){fs.writeFileSync(f,'#!/usr/bin/env node\\n'+c)}\"",
 		"prepack": "npm run build",
@@ -55,24 +58,24 @@
 		"node": ">=22"
 	},
 	"dependencies": {
+		"@genvid/c3source": "^1.0.0",
 		"@genvid/mcp-utils": "^0.2.0",
-		"@genvid/c3source": "^0.4.0",
 		"@modelcontextprotocol/sdk": "^1.27.1",
 		"yargs": "^17.7.2",
 		"zod": "^3.23.0"
 	},
 	"devDependencies": {
-		"mocha": "^10.4.0",
-		"chai": "^5.1.1",
-		"@types/node": "^22.0.0",
-		"@types/mocha": "^10.0.6",
 		"@types/chai": "^4.3.16",
-		"tsx": "^4.21.0",
-		"typescript": "^5.4.5",
-		"eslint": "^8.36.0",
+		"@types/mocha": "^10.0.6",
+		"@types/node": "^22.0.0",
+		"@types/yargs": "^17.0.33",
 		"@typescript-eslint/eslint-plugin": "^7.10.0",
 		"@typescript-eslint/parser": "^7.10.0",
+		"chai": "^5.1.1",
+		"eslint": "^8.36.0",
 		"eslint-config-prettier": "^8.7.0",
-		"@types/yargs": "^17.0.33"
+		"mocha": "^10.4.0",
+		"tsx": "^4.21.0",
+		"typescript": "^5.4.5"
 	}
 }
