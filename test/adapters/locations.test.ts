@@ -127,4 +127,23 @@ describe("resolveLocations", () => {
       assert.equal(loc.projectRoot, root);
     });
   });
+
+  describe("configDir and configFileName", () => {
+    it("default config: configDir equals projectRoot and configFileName equals domain-config.json", () => {
+      const loc = resolveLocations({}, root);
+      assert.equal(loc.configDir, root);
+      assert.equal(loc.configFileName, "domain-config.json");
+    });
+
+    it("relative --config: join of configDir and configFileName equals configPath", () => {
+      const loc = resolveLocations({ config: "sub/dm.json" }, root);
+      assert.equal(path.join(loc.configDir, loc.configFileName), loc.configPath);
+    });
+
+    it("absolute --config outside projectRoot: join of configDir and configFileName equals configPath", () => {
+      const outsideRoot = path.resolve(os.tmpdir(), "other-project", "custom.json");
+      const loc = resolveLocations({ config: outsideRoot }, root);
+      assert.equal(path.join(loc.configDir, loc.configFileName), loc.configPath);
+    });
+  });
 });

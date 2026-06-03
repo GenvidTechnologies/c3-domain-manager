@@ -3,7 +3,7 @@ import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { computeDomainData } from "../../src/domain/domainGenerator.js";
+import { computeDomainData, loadConfig } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig } from "../../src/domain/types.js";
 
 /** Create a file (and its parent directories) in the temp dir. */
@@ -135,5 +135,78 @@ describe("computeDomainData", () => {
     assert.equal(result.domains[0].layouts.length, 1);
     assert.equal(result.domains[0].layouts[0].path, "layouts/Login/LoginLayout.json");
     assert.deepEqual(result.unclassified, []);
+  });
+});
+
+describe("loadConfig", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loadConfig-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // R3: unknown keys at top level and inside a domain def are preserved (.passthrough())
+  it("R3: retains unknown top-level and per-domain keys (passthrough)", async () => {
+    const configObj = {
+      unknownTopLevel: "kept",
+      domains: {
+        Auth: { description: "Auth", unknownDomainKey: 42 },
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "domain-config.json"),
+      JSON.stringify(configObj),
+      "utf-8",
+    );
+
+    const result = await loadConfig(tmpDir, "domain-config.json");
+
+    assert.equal((result as Record<string, unknown>)["unknownTopLevel"], "kept");
+    assert.equal(
+      (result.domains["Auth"] as Record<string, unknown>)["unknownDomainKey"],
+      42,
+    );
+  });
+
+  // R4: malformed JSON causes rejection; error message contains "loadProjectConfig("
+  it("R4: rejects on malformed JSON with loadProjectConfig( prefix", async () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "domain-config.json"),
+      "{ not valid json",
+      "utf-8",
+    );
+
+    let caught: Error | undefined;
+    try {
+      await loadConfig(tmpDir, "domain-config.json");
+    } catch (e) {
+      caught = e as Error;
+    }
+
+    assert.isDefined(caught, "loadConfig should have thrown");
+    assert.include(caught!.message, "loadProjectConfig(");
+  });
+
+  // R5: missing `domains` field causes rejection; error message mentions "domains"
+  it("R5: rejects when domains field is missing, message mentions domains", async () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "domain-config.json"),
+      JSON.stringify({}),
+      "utf-8",
+    );
+
+    let caught: Error | undefined;
+    try {
+      await loadConfig(tmpDir, "domain-config.json");
+    } catch (e) {
+      caught = e as Error;
+    }
+
+    assert.isDefined(caught, "loadConfig should have thrown");
+    assert.include(caught!.message, "domains");
   });
 });

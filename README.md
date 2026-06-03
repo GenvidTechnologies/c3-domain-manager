@@ -179,7 +179,7 @@ Key exports from `src/index.ts`:
 | Export | Module | Description |
 |--------|--------|-------------|
 | `classifyFile(path, fileType, config)` | `classification` | Classify one file path into a domain name |
-| `generateDomainIndex(root, extracted, configPath, log)` | `domainGenerator` | I/O entry point — reads config, writes index |
+| `generateDomainIndex(root, extracted, configDir, configFileName, log)` → `Promise` | `domainGenerator` | Async I/O entry point — validates config via `DomainConfigSchema`, writes index |
 | `computeDomainData(root, config)` | `domainGenerator` | Pure computation — returns `DomainData[]` without I/O |
 | `listUncategorized(root, config)` | `domainAnalysis` | Return file paths not covered by the config |
 | `listStaleOverrides(root, config)` | `domainAnalysis` | Return override keys whose files are missing |

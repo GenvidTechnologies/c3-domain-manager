@@ -29,7 +29,7 @@ Note: both local development and CI use `npm` for these script names. CI runs th
 
 Two dependencies are published public packages on npm, installed normally via `npm install` (no special setup):
 
-`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`), the `EventSheet`/`Layout`/`FunctionParameter` types, and (since 1.1.0) the typed event-tree extractors `extractFunctions(sheet)` and `extractIncludes(sheet)` — we consume both instead of hand-rolling the walk. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`).
+`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`), the `EventSheet`/`Layout`/`FunctionParameter` types, and (since 1.1.0) the typed event-tree extractors `extractFunctions(sheet)` and `extractIncludes(sheet)` — we consume both instead of hand-rolling the walk. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`) and (since 0.3.0) the `loadProjectConfig(projectRoot, fileName, schema)` config loader plus its `isMcpError` guard — an async, never-throwing read+merge+zod-validate that returns either the typed config or a structured `CallToolResult` error.
 
 ## TypeScript / module setup
 
@@ -45,7 +45,7 @@ The analysis core lives in `src/domain/` and is pure and I/O-light. The CLI (`sr
 
 **Computation vs I/O split** — the key pattern in `domainGenerator.ts`:
 - `computeDomainData(rootDir, config, log)` is the pure heart: walks the project, classifies files, parses event sheets, and resolves cross-domain dependencies, returning `{ domains: DomainData[], unclassified: string[] }` with no writes.
-- `generateDomainIndex(...)` wraps it for I/O: loads the config, calls `computeDomainData`, then wipes and rewrites `extracted/domain-index/` (a master `index.md` plus one page per domain).
+- `generateDomainIndex(...)` wraps it for I/O: it is **async** and takes `(rootDir, outDir, configDir, configFileName, log)`. It loads the config via the async throwing `loadConfig(configDir, configFileName)` (a thin wrapper over mcp-utils' `loadProjectConfig` that validates against `DomainConfigSchema` and throws a `loadProjectConfig(...)`-prefixed `Error` on failure, keeping MCP types out of the pure core), calls `computeDomainData`, then wipes and rewrites `extracted/domain-index/` (a master `index.md` plus one page per domain). The MCP server bypasses this wrapper and calls `loadProjectConfig` directly so its tool handlers can return the structured `CallToolResult` error verbatim. The config path is split into `configDir`/`configFileName` by `resolveLocations` so an absolute, outside-root `--config` still resolves (`path.join(configDir, configFileName) === configPath`).
 
 **Classification** (`classification.ts`, `classifyFile`) decides which domain a file belongs to:
 1. Exact-path `overrides` win first.
@@ -57,7 +57,7 @@ Files matching nothing become `unclassified`.
 
 Downstream analysis modules all consume `DomainData[]`: `health.ts` (Ca/Ce/instability), `relationships.ts` (`validateBoundaries` — declared vs. observed deps), `glossary.ts` (cross-domain term collisions), `contextMap.ts` (text/Mermaid), `domainAnalysis.ts` (`listUncategorized`, `listStaleOverrides`, override validation). `formatting.ts` renders everything to markdown/text.
 
-All domain types are defined in `src/domain/types.ts` (`DomainConfig`, `DomainDefinition`, `DomainData`, `Relationship`, `FunctionDef`).
+All domain types are defined in `src/domain/types.ts` (`DomainConfig`, `DomainDefinition`, `DomainData`, `Relationship`, `FunctionDef`). The config types (`DomainConfig`/`DomainDefinition`/`SharedSubdomainDefinition`/`Relationship`) are **schema-first**: `DomainConfigSchema` is the source of truth and the types are `z.infer` of it. The schemas are lenient — `.passthrough()` so unknown keys survive the load→mutate→write round-trip, with non-essential fields optional and `description` required.
 
 ### MCP server specifics (`src/mcp/server.ts`)
 
@@ -69,3 +69,5 @@ All domain types are defined in `src/domain/types.ts` (`DomainConfig`, `DomainDe
 ## Testing conventions
 
 Tests use mocha + chai (`assert`) and run through `tsx` (no build needed). `test/setup.ts` is a mocha root-hook plugin that silences `console.log`/`console.debug` during each test (leaving `warn`/`error`) — diagnostic logging in the core is passed in as a `log`/`Logger` callback, so prefer that over global console output. Tests live under `test/domain/` mirroring `src/domain/`.
+
+There is **no test harness for the MCP server** (`src/mcp/server.ts`): only `test/domain/` and `test/adapters/` are tested. Server-specific behaviour — tool-level `isMcpError`/`CallToolResult` propagation, the `domainConfigCache` invalidation on watcher events and self-writes, optimistic-concurrency `txId` rejection — is currently covered only by `typecheck` plus the core-level tests of the functions each tool wraps (e.g. `loadConfig`'s error path in `test/domain/domainGenerator.test.ts`). Standing up a server harness (driving the registered tool callbacks against a temp project) is a known follow-up; account for it before relying on server-only logic being regression-tested. There is also no async-rejection helper (`chai-as-promised` is not installed) — assert on rejected promises with `try/catch` + `assert.include(err.message, ...)`.

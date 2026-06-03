@@ -10,6 +10,8 @@ import type { EventSheet, Layout, FunctionParameter } from "@genvid/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
+import { DomainConfigSchema } from "./types.js";
+import { loadProjectConfig, isMcpError } from "@genvid/mcp-utils";
 import type { Logger } from "@genvid/mcp-utils";
 
 /** Format function parameters as "name: type, name2: type2". */
@@ -33,15 +35,14 @@ export function extractFunctionDefs(sheet: EventSheet, sheetName: string): Funct
   }));
 }
 
-export function loadConfig(configPath: string): DomainConfig {
-  const content = fs.readFileSync(configPath, "utf-8");
-  const config: DomainConfig = JSON.parse(content);
-
-  if (!config.domains || typeof config.domains !== "object") {
-    throw new Error("domain-config.json must have a 'domains' object");
+export async function loadConfig(projectRoot: string, fileName: string): Promise<DomainConfig> {
+  const cfg = await loadProjectConfig(projectRoot, fileName, DomainConfigSchema);
+  if (isMcpError(cfg)) {
+    const text =
+      cfg.content?.map((c) => ("text" in c ? c.text : "")).join("\n") ?? "config load failed";
+    throw new Error(text);
   }
-
-  return config;
+  return cfg;
 }
 
 /** Directories that are structural layers, not domain-relevant. Recurse into them. */
@@ -247,8 +248,14 @@ export function computeDomainData(
   return { domains, unclassified };
 }
 
-export function generateDomainIndex(rootDir: string, outDir: string, configPath: string, log: Logger = console.log) {
-  const config = loadConfig(configPath);
+export async function generateDomainIndex(
+  rootDir: string,
+  outDir: string,
+  projectRoot: string,
+  fileName: string,
+  log: Logger = console.log,
+): Promise<void> {
+  const config = await loadConfig(projectRoot, fileName);
   const domainIndexDir = path.join(outDir, "domain-index");
 
   const { domains, unclassified } = computeDomainData(rootDir, config, log);

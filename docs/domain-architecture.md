@@ -98,6 +98,10 @@ Optional. Declares the expected integration patterns between domains using DDD r
 
 Declared relationships are checked by `validate-boundaries`. Observed dependencies (found in event sheet includes) that are not declared produce warnings.
 
+### Validation
+
+The config is validated against a lenient zod schema (`DomainConfigSchema`) when loaded. "Lenient" means unknown keys are **tolerated and preserved** (so extra fields you add survive a load→edit→write round-trip through the MCP `set-overrides`/`remove-overrides` tools) and non-essential fields are optional; only `domains` and each domain's `description` are required. A missing file, malformed JSON, or a schema violation produces a clear error prefixed `loadProjectConfig(domain-config.json): …` — from the CLI it aborts the command, and from the MCP server it is returned as a structured tool error.
+
 ## File classification rules
 
 Files are classified in two steps:
