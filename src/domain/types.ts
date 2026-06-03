@@ -2,30 +2,43 @@
 // here so consumers of this package keep importing it from one place.
 export type { FunctionParameter } from "@genvid/c3source";
 
-export interface Relationship {
-  from: string;
-  to: string;
-  type: "shared-kernel" | "customer-supplier" | "conformist" | "anti-corruption-layer" | "open-host-service";
-  description?: string;
-}
+import { z } from "zod";
 
-export interface DomainConfig {
-  domains: Record<string, DomainDefinition>;
-  sharedSubdomains?: Record<string, SharedSubdomainDefinition>;
-  overrides?: Record<string, string>;
-  relationships?: Relationship[];
-}
+const RelationshipSchema = z
+  .object({
+    from: z.string(),
+    to: z.string(),
+    type: z.enum(["shared-kernel", "customer-supplier", "conformist", "anti-corruption-layer", "open-host-service"]),
+    description: z.string().optional(),
+  })
+  .passthrough();
 
-export interface DomainDefinition {
-  description: string;
-  eventSheetDirs?: string[];
-  layoutDirs?: string[];
-  scriptDirs?: string[];
-  strategy?: "core" | "supporting" | "generic";
-  glossary?: Record<string, string>;
-}
+const DomainDefinitionSchema = z
+  .object({
+    description: z.string(),
+    eventSheetDirs: z.array(z.string()).optional(),
+    layoutDirs: z.array(z.string()).optional(),
+    scriptDirs: z.array(z.string()).optional(),
+    strategy: z.enum(["core", "supporting", "generic"]).optional(),
+    glossary: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
 
-export interface SharedSubdomainDefinition extends DomainDefinition {}
+const SharedSubdomainDefinitionSchema = DomainDefinitionSchema;
+
+export const DomainConfigSchema = z
+  .object({
+    domains: z.record(z.string(), DomainDefinitionSchema),
+    sharedSubdomains: z.record(z.string(), SharedSubdomainDefinitionSchema).optional(),
+    overrides: z.record(z.string(), z.string()).optional(),
+    relationships: z.array(RelationshipSchema).optional(),
+  })
+  .passthrough();
+
+export type Relationship = z.infer<typeof RelationshipSchema>;
+export type DomainDefinition = z.infer<typeof DomainDefinitionSchema>;
+export type SharedSubdomainDefinition = z.infer<typeof SharedSubdomainDefinitionSchema>;
+export type DomainConfig = z.infer<typeof DomainConfigSchema>;
 
 export interface FunctionDef {
   name: string;
