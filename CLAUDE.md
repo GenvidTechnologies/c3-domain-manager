@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`c3-domain-manager` analyzes Construct 3 projects through a domain-driven-design lens. It reads a `domain-config.json` from the *target* project's root (the current working directory, **not** this repo), classifies the project's `eventSheets/`, `layouts/`, and `scripts/` files into named domains, then produces a markdown domain index, health/coupling metrics, boundary validation, glossary collision checks, and a context map. The same capabilities are exposed both as a CLI and as an MCP server (stdio).
+`c3-domain-manager` analyzes Construct 3 projects through a domain-driven-design lens. It reads a `domain-config.json` from the *target* project's root (the current working directory, **not** this repo) and writes output to `extracted/` there, then produces a markdown domain index, health/coupling metrics, boundary validation, glossary collision checks, and a context map. Both locations are overridable: `--config <path>` selects the config file and `--extracted <path>` selects the output directory (use `none` for an ephemeral temp dir, auto-cleaned on exit); relative paths for both flags resolve against the project root. The same capabilities are exposed both as a CLI and as an MCP server (stdio); the MCP server receives the resolved locations via `startServer(loc)`.
 
 Read `docs/domain-architecture.md` for the domain model concepts and the full `domain-config.json` schema.
 
@@ -41,7 +41,7 @@ Two dependencies are published public packages on npm, installed normally via `n
 
 ## Architecture
 
-The analysis core lives in `src/domain/` and is pure and I/O-light. The CLI (`src/cli.ts`) and the MCP server (`src/mcp/server.ts`) are thin adapters over it. `src/index.ts` is the public library API (re-exports everything in `src/domain/`).
+The analysis core lives in `src/domain/` and is pure and I/O-light. The CLI (`src/cli.ts`) and the MCP server (`src/mcp/server.ts`) are thin adapters over it. Code shared *between* those two adapters lives in `src/adapters/` (e.g. `locations.ts` — the `resolveLocations` seam that resolves the config path, extracted-output dir, and ephemeral-temp behaviour from CLI flags / `startServer` options); it is deliberately **not** re-exported from the public API. `src/index.ts` is the public library API (re-exports everything in `src/domain/` only).
 
 **Computation vs I/O split** — the key pattern in `domainGenerator.ts`:
 - `computeDomainData(rootDir, config, log)` is the pure heart: walks the project, classifies files, parses event sheets, and resolves cross-domain dependencies, returning `{ domains: DomainData[], unclassified: string[] }` with no writes.
@@ -68,4 +68,4 @@ All domain types are defined in `src/domain/types.ts` (`DomainConfig`, `DomainDe
 
 ## Testing conventions
 
-Tests use mocha + chai (`expect`) and run through `tsx` (no build needed). `test/setup.ts` is a mocha root-hook plugin that silences `console.log`/`console.debug` during each test (leaving `warn`/`error`) — diagnostic logging in the core is passed in as a `log`/`Logger` callback, so prefer that over global console output. Tests live under `test/domain/` mirroring `src/domain/`.
+Tests use mocha + chai (`assert`) and run through `tsx` (no build needed). `test/setup.ts` is a mocha root-hook plugin that silences `console.log`/`console.debug` during each test (leaving `warn`/`error`) — diagnostic logging in the core is passed in as a `log`/`Logger` callback, so prefer that over global console output. Tests live under `test/domain/` mirroring `src/domain/`.

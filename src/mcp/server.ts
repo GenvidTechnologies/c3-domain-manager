@@ -22,9 +22,14 @@ import {
 } from "../domain/domainAnalysis.js";
 import { generateDomainIndex, computeDomainData } from "../domain/domainGenerator.js";
 import type { ComputeDomainDataResult } from "../domain/domainGenerator.js";
+import { resolveLocations } from "../adapters/locations.js";
+import type { ResolvedLocations } from "../adapters/locations.js";
 
 let PROJECT_ROOT = process.cwd();
 let EXTRACTED_DIR = path.join(PROJECT_ROOT, "extracted");
+let CONFIG_PATH = path.join(PROJECT_ROOT, "domain-config.json");
+let CONFIG_WATCH_KEY = CONFIG_PATH.replace(/\\/g, "/");
+let EXTRACTED_EPHEMERAL = false;
 
 const server = new McpServer(
   { name: "c3-domain-manager", version: "1.0.0" },
@@ -51,10 +56,6 @@ const REGENERATE = { readOnlyHint: false, destructiveHint: false, idempotentHint
 const MUTATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false } as const;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function toForwardSlash(p: string): string {
-  return p.replace(/\\/g, "/");
-}
 
 function emitLog(level: "debug" | "info" | "warning" | "error", message: string): void {
   server.sendLoggingMessage({ level, logger: "c3-domain-manager", data: message }).catch(() => {});
@@ -110,8 +111,7 @@ function paginatedResponse(
 
 function loadDomainConfig(): DomainConfig {
   if (!domainConfigCache) {
-    const configPath = path.join(PROJECT_ROOT, "domain-config.json");
-    domainConfigCache = JSON.parse(fs.readFileSync(configPath, "utf-8")) as DomainConfig;
+    domainConfigCache = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as DomainConfig;
   }
   return domainConfigCache;
 }
@@ -125,11 +125,10 @@ function getDomainData(): ComputeDomainDataResult {
 }
 
 function writeDomainConfig(config: DomainConfig): void {
-  const configPath = path.join(PROJECT_ROOT, "domain-config.json");
   suppressWatcherDepth++;
   try {
-    expectedChanges.add("domain-config.json");
-    fs.writeFileSync(configPath, JSON.stringify(config, null, "\t") + "\n", "utf-8");
+    expectedChanges.add(CONFIG_WATCH_KEY);
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, "\t") + "\n", "utf-8");
   } finally {
     suppressWatcherDepth--;
   }
@@ -371,8 +370,7 @@ server.registerTool(
       try {
         suppressWatcherDepth++;
         try {
-          const configPath = path.join(PROJECT_ROOT, "domain-config.json");
-          generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, configPath, log);
+          generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_PATH, log);
         } finally {
           suppressWatcherDepth--;
         }
@@ -517,13 +515,11 @@ server.registerTool(
 // ── File Watcher ─────────────────────────────────────────────────────────────
 
 function setupWatcher(): void {
-  const configPath = path.join(PROJECT_ROOT, "domain-config.json");
-  if (!fs.existsSync(configPath)) return;
+  if (!fs.existsSync(CONFIG_PATH)) return;
 
-  fs.watch(configPath, () => {
+  fs.watch(CONFIG_PATH, () => {
     if (suppressWatcherDepth > 0) return;
-    const normalized = toForwardSlash("domain-config.json");
-    if (expectedChanges.consume(normalized)) return;
+    if (expectedChanges.consume(CONFIG_WATCH_KEY)) return;
     txId++;
     domainDirty = true;
     domainConfigCache = null;
@@ -537,19 +533,19 @@ function setupWatcher(): void {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-export async function startServer(projectDir?: string): Promise<void> {
-  if (projectDir) {
-    PROJECT_ROOT = projectDir;
-    EXTRACTED_DIR = path.join(PROJECT_ROOT, "extracted");
-  }
+export async function startServer(loc: ResolvedLocations = resolveLocations({}, process.cwd())): Promise<void> {
+  PROJECT_ROOT = loc.projectRoot;
+  EXTRACTED_DIR = loc.extractedDir;
+  CONFIG_PATH = loc.configPath;
+  CONFIG_WATCH_KEY = loc.configWatchKey;
+  EXTRACTED_EPHEMERAL = loc.extractedEphemeral;
 
   const domainIndexPath = path.join(EXTRACTED_DIR, "domain-index");
   if (!fs.existsSync(domainIndexPath)) {
     console.error(`[c3-domain-manager] domain-index not found — auto-generating...`);
     try {
       const log: Logger = (...args) => console.error(`[c3-domain-manager]   ${args.map(String).join(" ")}`);
-      const configPath = path.join(PROJECT_ROOT, "domain-config.json");
-      generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, configPath, log);
+      generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_PATH, log);
       console.error(`[c3-domain-manager] Auto-generation complete`);
     } catch (e) {
       console.error(`[c3-domain-manager] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
@@ -557,11 +553,15 @@ export async function startServer(projectDir?: string): Promise<void> {
     }
   }
   console.error(`[c3-domain-manager] Starting server in ${PROJECT_ROOT}`);
+  console.error(`[c3-domain-manager] config: ${CONFIG_PATH}${EXTRACTED_EPHEMERAL ? " | extracted: ephemeral" : ""}`);
 
   // Graceful shutdown
   function shutdown() {
     console.error("[c3-domain-manager] Shutting down...");
     server.close().catch(() => {});
+    if (EXTRACTED_EPHEMERAL) {
+      try { fs.rmSync(EXTRACTED_DIR, { recursive: true, force: true }); } catch { /* best-effort */ }
+    }
     process.exit(0);
   }
   process.on("SIGINT", shutdown);

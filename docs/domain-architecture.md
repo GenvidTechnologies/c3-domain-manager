@@ -140,6 +140,21 @@ Running `c3-domain-manager generate` (or `regenerate` via MCP) writes files to `
 
 Commit `extracted/domain-index/` to version control so the index is always available without regenerating.
 
+## Paths and locations
+
+By default the tool reads `domain-config.json` from the target project root (your current working directory) and writes generated output to `extracted/` there. Both can be overridden:
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--config <path>` | `<project-root>/domain-config.json` | Selects the domain-config file. |
+| `--extracted <path>` | `<project-root>/extracted` | Selects the domain-index output directory. |
+
+Relative paths for both flags resolve against the **target project root** (the process working directory), never the package install directory. Absolute paths are used as-is. Operator-supplied paths are trusted — paths outside the project root are intentionally allowed.
+
+**Ephemeral mode** — pass `none` as the `--extracted` value to route output into a temporary directory that is automatically deleted when the command finishes (or when the MCP server shuts down on SIGINT/SIGTERM). This is useful as a no-side-effect validation pass: generation runs but leaves no files behind in the project tree.
+
+When using the MCP server, the resolved locations are forwarded from the CLI `server` command via `startServer(loc: ResolvedLocations)`. There are no environment variables.
+
 ## Health metrics
 
 `domain-health` (MCP tool or library `computeHealth`) computes per-domain:
