@@ -12,6 +12,8 @@ export interface LocationOptions {
 export interface ResolvedLocations {
   projectRoot: string;
   configPath: string;
+  configDir: string;
+  configFileName: string;
   extractedDir: string;
   extractedEphemeral: boolean;
   configWatchKey: string;
@@ -49,6 +51,8 @@ export function resolveLocations(
   return {
     projectRoot,
     configPath,
+    configDir: path.dirname(configPath),
+    configFileName: path.basename(configPath),
     extractedDir,
     extractedEphemeral,
     configWatchKey,
