@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import yargs from "yargs";
@@ -8,10 +8,9 @@ import { hideBin } from "yargs/helpers";
 import { generateDomainIndex } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides } from "./domain/domainAnalysis.js";
 import type { DomainConfig } from "./domain/types.js";
+import { resolveLocations } from "./adapters/locations.js";
 
 const PROJECT_ROOT = process.cwd();
-const EXTRACTED_DIR = path.join(PROJECT_ROOT, "extracted");
-const CONFIG_PATH = path.join(PROJECT_ROOT, "domain-config.json");
 
 // Resolve this package's own package.json relative to the compiled module
 // (dist/cli.js → ../package.json), NOT process.cwd() which is the target project.
@@ -23,25 +22,34 @@ yargs(hideBin(process.argv))
     "server",
     "Start the c3-domain-manager MCP server",
     () => {},
-    async () => {
+    async (argv) => {
+      const loc = resolveLocations({ config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }, PROJECT_ROOT);
       const { startServer } = await import("./mcp/server.js");
-      await startServer();
+      await startServer(loc);
     },
   )
   .command(
     "generate",
     "Generate domain index",
     () => {},
-    () => {
-      generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_PATH, console.log);
+    (argv) => {
+      const loc = resolveLocations({ config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }, PROJECT_ROOT);
+      try {
+        generateDomainIndex(loc.projectRoot, loc.extractedDir, loc.configPath, console.log);
+      } finally {
+        if (loc.extractedEphemeral) {
+          rmSync(loc.extractedDir, { recursive: true, force: true });
+        }
+      }
     },
   )
   .command(
     "list-uncategorized",
     "List files not mapped to any domain in domain-config.json",
     () => {},
-    () => {
-      const config = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as DomainConfig;
+    (argv) => {
+      const loc = resolveLocations({ config: argv.config as string | undefined }, PROJECT_ROOT);
+      const config = JSON.parse(readFileSync(loc.configPath, "utf-8")) as DomainConfig;
       const files = listUncategorized(PROJECT_ROOT, config);
       if (files.length === 0) {
         console.log("All files are categorized.");
@@ -55,8 +63,9 @@ yargs(hideBin(process.argv))
     "list-stale-overrides",
     "List stale file overrides in domain-config.json",
     () => {},
-    () => {
-      const config = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as DomainConfig;
+    (argv) => {
+      const loc = resolveLocations({ config: argv.config as string | undefined }, PROJECT_ROOT);
+      const config = JSON.parse(readFileSync(loc.configPath, "utf-8")) as DomainConfig;
       const stale = listStaleOverrides(PROJECT_ROOT, config);
       if (stale.length === 0) {
         console.log("No stale overrides.");
@@ -66,6 +75,16 @@ yargs(hideBin(process.argv))
       }
     },
   )
+  .option("config", {
+    type: "string",
+    describe:
+      "Path to domain-config.json (default: <project-root>/domain-config.json). Relative paths resolve from the project root; absolute paths are used as-is.",
+  })
+  .option("extracted", {
+    type: "string",
+    describe:
+      'Output directory for the generated domain index (default: <project-root>/extracted). Use "none" for an ephemeral temp dir auto-cleaned on exit.',
+  })
   .demandCommand(1, "Please specify a subcommand. Use --help for available commands.")
   .strict()
   .version(PKG_VERSION)
