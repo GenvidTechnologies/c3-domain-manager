@@ -9,9 +9,8 @@ to re-run (that skill is one-time setup, not per-release).
 
 ```bash
 # 1. Land all release content on main first (the tag publishes whatever main points at).
-# 2. Bump the version (patch for fixes, minor for features) in BOTH files, 3 spots total:
-#      package.json        → "version"
-#      package-lock.json    → top-level "version" AND packages."".version
+# 2. Bump the version (patch for fixes, minor for features) — updates all 3 spots, no commit/tag:
+npm version X.Y.Z --no-git-tag-version
 # 3. Commit + tag + push:
 git add package.json package-lock.json
 git commit -m "chore: Release X.Y.Z"     # see message shape below
@@ -28,11 +27,15 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    renaming an exported function/type (anything re-exported from `src/index.ts`) is
    the pre-1.0 "breaking" signal. Example: `0.1.3 → 0.2.0` for issue #5, which fixed
    the extraction by retiring the public `extractIncludes`/`extractFunctions` exports.
-   Update **three** locations (a bare `npm version` would do this, but see the note
-   below on why we do it by hand):
+   Run `npm version X.Y.Z --no-git-tag-version` — it updates all **three** spots and
+   makes **no commit and no tag**, so you keep control of the message and tag style
+   below:
    - `package.json` → `"version"`
    - `package-lock.json` → the top-level `"version"`
    - `package-lock.json` → `packages."".version` (the root package entry, ~line 9)
+
+   (You can edit the three spots by hand instead, but that risks missing the second
+   `package-lock.json` spot; the flag-driven bump is safer. See the note below.)
 
 2. **Commit** with the project's release-commit shape — a `chore: Release X.Y.Z`
    subject, a short body summarising what the release contains (issue refs welcome),
@@ -84,12 +87,14 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
   own version from `package.json` resolved via `import.meta.url`. If you add files
   the published CLI must read at runtime, resolve them relative to the module, never
   `cwd`. See the "TypeScript / module setup" section in `CLAUDE.md`.
-- **Why bump by hand instead of `npm version`?** `npm version patch` would bump all
-  three spots and tag, but its default commit message (`X.Y.Z`) and tag (annotated)
-  don't match the `chore: Release X.Y.Z` + lightweight-tag + co-author-trailer
-  convention. Doing it by hand keeps the history consistent. If you prefer the tool:
-  `npm version patch -m "chore: Release %s"` gets the message but still creates an
-  annotated tag and omits the trailer.
+- **Why `npm version --no-git-tag-version` and not a bare `npm version`?** A bare
+  `npm version patch` bumps all three spots but *also* makes a commit (default message
+  `X.Y.Z`) and an **annotated** tag — neither matches the `chore: Release X.Y.Z` +
+  lightweight-tag + co-author-trailer convention. The `--no-git-tag-version` flag keeps
+  the correct three-spot bump while making no commit and no tag, so you commit and
+  lightweight-tag by hand (steps 2–4) to match the convention. Hand-editing the three
+  spots also works but risks missing the second `package-lock.json` spot
+  (`packages."".version`).
 - **If the version bump already landed with the feature/fix branch**, the release step
   is just *tag the merge commit* — there's no need for a separate `chore: Release X.Y.Z`
   commit. The tag publishes whatever `main` points at, and `main` already carries the
