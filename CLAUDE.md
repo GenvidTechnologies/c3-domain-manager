@@ -29,7 +29,7 @@ Note: both local development and CI use `npm` for these script names. CI runs th
 
 Two dependencies are published public packages on npm, installed normally via `npm install` (no special setup):
 
-`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`) and the `EventSheet`/`Layout` types. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`).
+`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`), the `EventSheet`/`Layout`/`FunctionParameter` types, and (since 1.1.0) the typed event-tree extractors `extractFunctions(sheet)` and `extractIncludes(sheet)` — we consume both instead of hand-rolling the walk. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`).
 
 ## TypeScript / module setup
 
@@ -53,7 +53,7 @@ The analysis core lives in `src/domain/` and is pure and I/O-light. The CLI (`sr
 3. Both `domains` and `sharedSubdomains` participate in matching.
 Files matching nothing become `unclassified`.
 
-**Cross-domain dependencies** are derived from `include` events inside event sheets. `extraction.ts` recursively walks the event tree (`group`/`block`/`function-block`/`custom-ace-block` children) to pull out `include` targets and function/ACE definitions. `domainGenerator` then maps each included sheet back to its owning domain to build the `includesFrom` / `includedBy` graphs on each `DomainData`.
+**Cross-domain dependencies** are derived from `include` events inside event sheets. The event-tree walk lives in `@genvid/c3source` (`extractIncludes`/`extractFunctions`, typed over the `EventSheetEvent` union); `domainGenerator.ts` calls them directly and maps the results onto our local `FunctionDef` via the small `extractFunctionDefs(sheet, sheetName)` seam (param-string formatting + `sourceSheet`/custom-ACE fields). `domainGenerator` then maps each included sheet back to its owning domain to build the `includesFrom` / `includedBy` graphs on each `DomainData`. (Before 0.2.0 this walk was hand-rolled in a local `src/domain/extraction.ts`, since retired.)
 
 Downstream analysis modules all consume `DomainData[]`: `health.ts` (Ca/Ce/instability), `relationships.ts` (`validateBoundaries` — declared vs. observed deps), `glossary.ts` (cross-domain term collisions), `contextMap.ts` (text/Mermaid), `domainAnalysis.ts` (`listUncategorized`, `listStaleOverrides`, override validation). `formatting.ts` renders everything to markdown/text.
 

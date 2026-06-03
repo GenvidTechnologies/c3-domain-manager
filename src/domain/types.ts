@@ -1,10 +1,6 @@
-export interface FunctionParameter {
-  name: string;
-  type: "string" | "number" | "boolean";
-  initialValue: string;
-  comment?: string;
-  sid: number;
-}
+// FunctionParameter is owned by @genvid/c3source (identical shape); re-exported
+// here so consumers of this package keep importing it from one place.
+export type { FunctionParameter } from "@genvid/c3source";
 
 export interface Relationship {
   from: string;

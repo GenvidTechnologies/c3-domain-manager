@@ -1,12 +1,37 @@
 import * as fs from "node:fs";
 import path from "node:path";
-import { find_all_eventsheets_path, find_all_layouts_path } from "@genvid/c3source";
-import type { EventSheet, Layout } from "@genvid/c3source";
+import {
+  find_all_eventsheets_path,
+  find_all_layouts_path,
+  extractFunctions,
+  extractIncludes,
+} from "@genvid/c3source";
+import type { EventSheet, Layout, FunctionParameter } from "@genvid/c3source";
 import { classifyFile } from "./classification.js";
-import { extractIncludes, extractFunctions } from "./extraction.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
-import type { DomainConfig, DomainData } from "./types.js";
+import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 import type { Logger } from "@genvid/mcp-utils";
+
+/** Format function parameters as "name: type, name2: type2". */
+function formatParams(params: FunctionParameter[]): string {
+  return params.map((p) => `${p.name}: ${p.type}`).join(", ");
+}
+
+/**
+ * Map c3source's typed `ExtractedFunction` list for a sheet onto our `FunctionDef`
+ * shape: format params to a string, stamp the source sheet, and surface the
+ * custom-ACE `objectClass`/`aceName` that `formatting.ts` renders.
+ */
+export function extractFunctionDefs(sheet: EventSheet, sheetName: string): FunctionDef[] {
+  return extractFunctions(sheet).map((f) => ({
+    name: f.name,
+    params: formatParams(f.params),
+    returnType: f.returnType,
+    sourceSheet: sheetName,
+    objectClass: f.objectClass,
+    aceName: f.kind === "custom-ace" ? f.name : undefined,
+  }));
+}
 
 export function loadConfig(configPath: string): DomainConfig {
   const content = fs.readFileSync(configPath, "utf-8");
@@ -137,11 +162,11 @@ export function computeDomainData(
     sheetDomainLookup.set(sheet.name, domain);
 
     // Extract functions
-    const funcs = extractFunctions(sheet.events, sheetName);
+    const funcs = extractFunctionDefs(sheet, sheetName);
     domainData.functions.push(...funcs);
 
     // Extract includes (will be resolved to cross-domain deps later)
-    const includes = extractIncludes(sheet.events);
+    const includes = extractIncludes(sheet).map((r) => r.includeSheet);
     if (includes.length > 0) {
       const existing = rawIncludes.get(domain) ?? [];
       existing.push(...includes);

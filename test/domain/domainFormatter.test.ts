@@ -1,9 +1,21 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { classifyFile } from "../../src/domain/classification.js";
-import { extractIncludes, extractFunctions } from "../../src/domain/extraction.js";
+import { extractFunctionDefs } from "../../src/domain/domainGenerator.js";
+import { extractIncludes } from "@genvid/c3source";
+import type { EventSheet, EventSheetEvent } from "@genvid/c3source";
 import { formatDomainIndex, formatDomainPage } from "../../src/domain/formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "../../src/domain/types.js";
+
+/** Wrap a fixture event array into a minimal EventSheet for the c3source extractors. */
+function makeSheet(name: string, events: unknown[]): EventSheet {
+  return { name, sid: 0, events: events as EventSheetEvent[] };
+}
+
+/** Included sheet names for a fixture event array, via c3source's extractIncludes. */
+function includeNames(events: unknown[]): string[] {
+  return extractIncludes(makeSheet("Fixture", events)).map((r) => r.includeSheet);
+}
 
 /** Helper to create a minimal DomainConfig. */
 function makeConfig(domains: DomainConfig["domains"], overrides?: DomainConfig["overrides"]): DomainConfig {
@@ -122,13 +134,13 @@ describe("domainFormatter", () => {
     });
   });
 
-  describe("extractIncludes", () => {
+  describe("extractIncludes (c3source) → include names", () => {
     it("returns included sheet names from event array", () => {
       const events = [
         { eventType: "include", includeSheet: "Login/LoginEvents" },
         { eventType: "include", includeSheet: "Goals/GoalEvents" },
       ];
-      const result = extractIncludes(events);
+      const result = includeNames(events);
       assert.deepEqual(result, ["Login/LoginEvents", "Goals/GoalEvents"]);
     });
 
@@ -143,7 +155,7 @@ describe("domainFormatter", () => {
           sid: 1,
         },
       ];
-      const result = extractIncludes(events);
+      const result = includeNames(events);
       assert.deepEqual(result, ["Login/LoginEvents"]);
     });
 
@@ -160,7 +172,7 @@ describe("domainFormatter", () => {
           sid: 1,
         },
       ];
-      const result = extractIncludes(events);
+      const result = includeNames(events);
       assert.deepEqual(result, []);
     });
 
@@ -175,12 +187,12 @@ describe("domainFormatter", () => {
           children: [{ eventType: "include", includeSheet: "Nested/Sheet" }],
         },
       ];
-      const result = extractIncludes(events);
+      const result = includeNames(events);
       assert.deepEqual(result, ["Nested/Sheet"]);
     });
   });
 
-  describe("extractFunctions", () => {
+  describe("extractFunctionDefs", () => {
     it("extracts function-block with params and return type", () => {
       const events = [
         {
@@ -198,7 +210,7 @@ describe("domainFormatter", () => {
           sid: 100,
         },
       ];
-      const result = extractFunctions(events, "Scoring/ScoreEvents");
+      const result = extractFunctionDefs(makeSheet("Scoring/ScoreEvents", events), "Scoring/ScoreEvents");
       assert.lengthOf(result, 1);
       assert.equal(result[0].name, "getScore");
       assert.equal(result[0].params, "level: number, name: string");
@@ -224,7 +236,7 @@ describe("domainFormatter", () => {
           sid: 200,
         },
       ];
-      const result = extractFunctions(events, "Plugins/PluginEvents");
+      const result = extractFunctionDefs(makeSheet("Plugins/PluginEvents", events), "Plugins/PluginEvents");
       assert.lengthOf(result, 1);
       assert.equal(result[0].name, "IsReady");
       assert.equal(result[0].params, "id: number");
@@ -257,7 +269,7 @@ describe("domainFormatter", () => {
           ],
         },
       ];
-      const result = extractFunctions(events, "Utils/UtilEvents");
+      const result = extractFunctionDefs(makeSheet("Utils/UtilEvents", events), "Utils/UtilEvents");
       assert.lengthOf(result, 1);
       assert.equal(result[0].name, "helperFunc");
       assert.equal(result[0].params, "");
@@ -274,7 +286,7 @@ describe("domainFormatter", () => {
           sid: 1,
         },
       ];
-      const result = extractFunctions(events, "Empty/Sheet");
+      const result = extractFunctionDefs(makeSheet("Empty/Sheet", events), "Empty/Sheet");
       assert.deepEqual(result, []);
     });
   });
@@ -603,7 +615,7 @@ describe("domainFormatter", () => {
           children: [{ eventType: "include", includeSheet: "Core/CoreUtils" }],
         },
       ];
-      const includes = extractIncludes(events);
+      const includes = includeNames(events);
       assert.deepEqual(includes, ["Login/LoginEvents", "Core/CoreUtils"]);
 
       // Test extractFunctions
@@ -633,7 +645,7 @@ describe("domainFormatter", () => {
           sid: 20,
         },
       ];
-      const funcs = extractFunctions(funcEvents, "Combat/WeaponEvents");
+      const funcs = extractFunctionDefs(makeSheet("Combat/WeaponEvents", funcEvents), "Combat/WeaponEvents");
       assert.lengthOf(funcs, 2);
       assert.equal(funcs[0].name, "doThing");
       assert.equal(funcs[0].params, "x: number");
