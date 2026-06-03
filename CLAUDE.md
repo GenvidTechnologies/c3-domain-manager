@@ -41,7 +41,7 @@ Two dependencies are published public packages on npm, installed normally via `n
 
 ## Architecture
 
-The analysis core lives in `src/domain/` and is pure and I/O-light. The CLI (`src/cli.ts`) and the MCP server (`src/mcp/server.ts`) are thin adapters over it. `src/index.ts` is the public library API (re-exports everything in `src/domain/`).
+The analysis core lives in `src/domain/` and is pure and I/O-light. The CLI (`src/cli.ts`) and the MCP server (`src/mcp/server.ts`) are thin adapters over it. Code shared *between* those two adapters lives in `src/adapters/` (e.g. `locations.ts` — the `resolveLocations` seam that resolves the config path, extracted-output dir, and ephemeral-temp behaviour from CLI flags / `startServer` options); it is deliberately **not** re-exported from the public API. `src/index.ts` is the public library API (re-exports everything in `src/domain/` only).
 
 **Computation vs I/O split** — the key pattern in `domainGenerator.ts`:
 - `computeDomainData(rootDir, config, log)` is the pure heart: walks the project, classifies files, parses event sheets, and resolves cross-domain dependencies, returning `{ domains: DomainData[], unclassified: string[] }` with no writes.
@@ -68,4 +68,4 @@ All domain types are defined in `src/domain/types.ts` (`DomainConfig`, `DomainDe
 
 ## Testing conventions
 
-Tests use mocha + chai (`expect`) and run through `tsx` (no build needed). `test/setup.ts` is a mocha root-hook plugin that silences `console.log`/`console.debug` during each test (leaving `warn`/`error`) — diagnostic logging in the core is passed in as a `log`/`Logger` callback, so prefer that over global console output. Tests live under `test/domain/` mirroring `src/domain/`.
+Tests use mocha + chai (`assert`) and run through `tsx` (no build needed). `test/setup.ts` is a mocha root-hook plugin that silences `console.log`/`console.debug` during each test (leaving `warn`/`error`) — diagnostic logging in the core is passed in as a `log`/`Logger` callback, so prefer that over global console output. Tests live under `test/domain/` mirroring `src/domain/`.
