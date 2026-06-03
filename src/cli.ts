@@ -25,7 +25,7 @@ yargs(hideBin(process.argv))
     () => {},
     async () => {
       const { startServer } = await import("./mcp/server.js");
-      await startServer(PROJECT_ROOT);
+      await startServer();
     },
   )
   .command(
