@@ -5,9 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import { generateDomainIndex } from "./domain/domainGenerator.js";
+import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides } from "./domain/domainAnalysis.js";
-import type { DomainConfig } from "./domain/types.js";
 import { resolveLocations } from "./adapters/locations.js";
 
 const PROJECT_ROOT = process.cwd();
@@ -32,10 +31,10 @@ yargs(hideBin(process.argv))
     "generate",
     "Generate domain index",
     () => {},
-    (argv) => {
+    async (argv) => {
       const loc = resolveLocations({ config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }, PROJECT_ROOT);
       try {
-        generateDomainIndex(loc.projectRoot, loc.extractedDir, loc.configPath, console.log);
+        await generateDomainIndex(loc.projectRoot, loc.extractedDir, loc.configDir, loc.configFileName, console.log);
       } finally {
         if (loc.extractedEphemeral) {
           rmSync(loc.extractedDir, { recursive: true, force: true });
@@ -47,9 +46,9 @@ yargs(hideBin(process.argv))
     "list-uncategorized",
     "List files not mapped to any domain in domain-config.json",
     () => {},
-    (argv) => {
+    async (argv) => {
       const loc = resolveLocations({ config: argv.config as string | undefined }, PROJECT_ROOT);
-      const config = JSON.parse(readFileSync(loc.configPath, "utf-8")) as DomainConfig;
+      const config = await loadConfig(loc.configDir, loc.configFileName);
       const files = listUncategorized(PROJECT_ROOT, config);
       if (files.length === 0) {
         console.log("All files are categorized.");
@@ -63,9 +62,9 @@ yargs(hideBin(process.argv))
     "list-stale-overrides",
     "List stale file overrides in domain-config.json",
     () => {},
-    (argv) => {
+    async (argv) => {
       const loc = resolveLocations({ config: argv.config as string | undefined }, PROJECT_ROOT);
-      const config = JSON.parse(readFileSync(loc.configPath, "utf-8")) as DomainConfig;
+      const config = await loadConfig(loc.configDir, loc.configFileName);
       const stale = listStaleOverrides(PROJECT_ROOT, config);
       if (stale.length === 0) {
         console.log("No stale overrides.");

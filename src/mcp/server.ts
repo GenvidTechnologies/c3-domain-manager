@@ -4,11 +4,13 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, paginateText, exposeDocs } from "@genvid/mcp-utils";
+import { ReadWriteLock, ExpectedChanges, paginateText, exposeDocs, loadProjectConfig, isMcpError } from "@genvid/mcp-utils";
 import type { Logger } from "@genvid/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
 import type { DomainConfig } from "../domain/types.js";
+import { DomainConfigSchema } from "../domain/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { collectGlossary, findCollisions, formatGlossaryReport } from "../domain/glossary.js";
 import { validateBoundaries, formatBoundaryReport } from "../domain/relationships.js";
 import { computeHealth, formatHealthReport } from "../domain/health.js";
@@ -28,6 +30,8 @@ import type { ResolvedLocations } from "../adapters/locations.js";
 let PROJECT_ROOT = process.cwd();
 let EXTRACTED_DIR = path.join(PROJECT_ROOT, "extracted");
 let CONFIG_PATH = path.join(PROJECT_ROOT, "domain-config.json");
+let CONFIG_DIR = path.dirname(CONFIG_PATH);
+let CONFIG_FILENAME = path.basename(CONFIG_PATH);
 let CONFIG_WATCH_KEY = CONFIG_PATH.replace(/\\/g, "/");
 let EXTRACTED_EPHEMERAL = false;
 
@@ -109,16 +113,19 @@ function paginatedResponse(
 
 // ── Domain Config Cache ───────────────────────────────────────────────────────
 
-function loadDomainConfig(): DomainConfig {
+async function loadDomainConfig(): Promise<DomainConfig | CallToolResult> {
   if (!domainConfigCache) {
-    domainConfigCache = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as DomainConfig;
+    const cfg = await loadProjectConfig(CONFIG_DIR, CONFIG_FILENAME, DomainConfigSchema);
+    if (isMcpError(cfg)) return cfg; // do NOT cache transient errors
+    domainConfigCache = cfg;
   }
   return domainConfigCache;
 }
 
-function getDomainData(): ComputeDomainDataResult {
+async function getDomainData(): Promise<ComputeDomainDataResult | CallToolResult> {
   if (!domainDataCache) {
-    const config = loadDomainConfig();
+    const config = await loadDomainConfig();
+    if (isMcpError(config)) return config;
     domainDataCache = computeDomainData(PROJECT_ROOT, config);
   }
   return domainDataCache;
@@ -132,6 +139,8 @@ function writeDomainConfig(config: DomainConfig): void {
   } finally {
     suppressWatcherDepth--;
   }
+  // Caching the mutated object without re-validation is safe: the lenient
+  // .passthrough() schema still accepts it, and we own the mutation.
   domainConfigCache = config;
   txId++;
   domainDirty = true;
@@ -185,7 +194,8 @@ server.registerTool(
   async ({ section }) =>
     rwlock.read(async () => {
       try {
-        const config = loadDomainConfig();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
         const text = formatDomainConfig(config, section as DomainConfigSection);
         return { content: [{ type: "text", text }] };
       } catch (e) {
@@ -206,7 +216,8 @@ server.registerTool(
   async () =>
     rwlock.read(async () => {
       try {
-        const config = loadDomainConfig();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
         const uncategorized = listUncategorized(PROJECT_ROOT, config);
         if (uncategorized.length === 0) {
           return { content: [{ type: "text", text: "All files are categorized." }] };
@@ -237,7 +248,8 @@ server.registerTool(
   async () =>
     rwlock.read(async () => {
       try {
-        const config = loadDomainConfig();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
         const stale = listStaleOverrides(PROJECT_ROOT, config);
         if (stale.length === 0) {
           return { content: [{ type: "text", text: "No stale overrides found." }] };
@@ -279,7 +291,8 @@ server.registerTool(
           isError: true,
         };
       }
-      const config = loadDomainConfig();
+      const config = await loadDomainConfig();
+      if (isMcpError(config)) return config;
       const validNames = collectValidDomainNames(config);
       const keyErrors = validateOverrideKeys(Object.keys(newOverrides));
       const valueErrors = validateOverrideValues(newOverrides, validNames);
@@ -333,7 +346,8 @@ server.registerTool(
           isError: true,
         };
       }
-      const config = loadDomainConfig();
+      const config = await loadDomainConfig();
+      if (isMcpError(config)) return config;
       if (!config.overrides || Object.keys(config.overrides).length === 0) {
         return { content: [{ type: "text", text: "No overrides to remove." }] };
       }
@@ -370,12 +384,13 @@ server.registerTool(
       try {
         suppressWatcherDepth++;
         try {
-          generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_PATH, log);
+          await generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_DIR, CONFIG_FILENAME, log);
         } finally {
           suppressWatcherDepth--;
         }
         // Populate domain data cache
-        const config = loadDomainConfig();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
         domainDataCache = computeDomainData(PROJECT_ROOT, config);
         domainDirty = false;
         return {
@@ -419,7 +434,8 @@ server.registerTool(
   async () =>
     rwlock.read(async () => {
       try {
-        const config = loadDomainConfig();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
         const entries = collectGlossary(config);
         const collisions = findCollisions(entries);
         const report = formatGlossaryReport(collisions);
@@ -444,8 +460,11 @@ server.registerTool(
   async ({ domain }) =>
     rwlock.read(async () => {
       try {
-        const config = loadDomainConfig();
-        const { domains } = getDomainData();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
+        const data = await getDomainData();
+        if (isMcpError(data)) return data;
+        const { domains } = data;
         const report = validateBoundaries(domains, config, domain);
         const text = formatBoundaryReport(report);
         return { content: [{ type: "text", text: appendStaleWarning(text) }] };
@@ -469,7 +488,9 @@ server.registerTool(
   async ({ domain: domainFilter }) =>
     rwlock.read(async () => {
       try {
-        const { domains } = getDomainData();
+        const data = await getDomainData();
+        if (isMcpError(data)) return data;
+        const { domains } = data;
         let targetDomains = domains;
         if (domainFilter) {
           targetDomains = domains.filter(d => d.name === domainFilter);
@@ -502,8 +523,11 @@ server.registerTool(
   async ({ format, domain, includeObserved }) =>
     rwlock.read(async () => {
       try {
-        const config = loadDomainConfig();
-        const { domains } = getDomainData();
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
+        const data = await getDomainData();
+        if (isMcpError(data)) return data;
+        const { domains } = data;
         const text = generateContextMap(domains, config, { format, domain, includeObserved });
         return { content: [{ type: "text", text: appendStaleWarning(text) }] };
       } catch (e) {
@@ -537,6 +561,8 @@ export async function startServer(loc: ResolvedLocations = resolveLocations({}, 
   PROJECT_ROOT = loc.projectRoot;
   EXTRACTED_DIR = loc.extractedDir;
   CONFIG_PATH = loc.configPath;
+  CONFIG_DIR = loc.configDir;
+  CONFIG_FILENAME = loc.configFileName;
   CONFIG_WATCH_KEY = loc.configWatchKey;
   EXTRACTED_EPHEMERAL = loc.extractedEphemeral;
 
@@ -545,7 +571,7 @@ export async function startServer(loc: ResolvedLocations = resolveLocations({}, 
     console.error(`[c3-domain-manager] domain-index not found — auto-generating...`);
     try {
       const log: Logger = (...args) => console.error(`[c3-domain-manager]   ${args.map(String).join(" ")}`);
-      generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_PATH, log);
+      await generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_DIR, CONFIG_FILENAME, log);
       console.error(`[c3-domain-manager] Auto-generation complete`);
     } catch (e) {
       console.error(`[c3-domain-manager] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
