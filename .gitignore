@@ -3,3 +3,6 @@ dist/
 *.tgz
 package/
 tsconfig.tsbuildinfo
+
+# Local-only planning artifact (genvid-dev:plan-task)
+/plan.md

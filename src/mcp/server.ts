@@ -4,7 +4,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, paginateText, exposeDocs, loadProjectConfig, isMcpError } from "@genvid/mcp-utils";
+import { ReadWriteLock, ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, READ_ONLY, REGENERATE, MUTATE } from "@genvid/mcp-utils";
 import type { Logger } from "@genvid/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
@@ -53,12 +53,6 @@ const expectedChanges = new ExpectedChanges();
 let domainConfigCache: DomainConfig | null = null;
 let domainDataCache: ComputeDomainDataResult | null = null;
 
-// ── Tool Annotations ─────────────────────────────────────────────────────────
-
-const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true } as const;
-const REGENERATE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true } as const;
-const MUTATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false } as const;
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function emitLog(level: "debug" | "info" | "warning" | "error", message: string): void {
@@ -83,33 +77,23 @@ function notFound(tool: string, hint: string): { content: { type: "text"; text: 
   };
 }
 
-const STALE_WARNING = "\n\n[Warning: domain index may be stale — run regenerate to refresh]";
+const STALE_WARNING_LINE = "[Warning: domain index may be stale — run regenerate to refresh]";
+const STALE_WARNING = "\n\n" + STALE_WARNING_LINE;
 
 function appendStaleWarning(text: string): string {
   return domainDirty ? text + STALE_WARNING : text;
+}
+
+// Footer for paginatedContent on index reads: the stale warning rides as a
+// trailing footer line (omitted entirely when the index is fresh).
+function staleFooter(): (() => string) | undefined {
+  return domainDirty ? () => STALE_WARNING_LINE : undefined;
 }
 
 const PAGINATION_PARAMS = {
   offset: z.number().int().min(1).optional().describe("Start line (1-based). Omit to start from beginning."),
   limit: z.number().int().min(1).optional().describe("Max lines to return. Omit to return all."),
 };
-
-function paginatedResponse(
-  text: string,
-  offset: number | undefined,
-  limit: number | undefined,
-): { content: { type: "text"; text: string }[] } {
-  const paginated = paginateText(text, { offset, limit });
-  const content: { type: "text"; text: string }[] = [
-    { type: "text", text: appendStaleWarning(paginated.text) },
-  ];
-  if (offset !== undefined || limit !== undefined) {
-    const returnedLines = paginated.text === "" ? 0 : paginated.text.split("\n").length;
-    const endLine = paginated.offset + Math.max(0, returnedLines - 1);
-    content.push({ type: "text", text: `lines: ${paginated.offset}-${endLine} / ${paginated.totalLines}` });
-  }
-  return { content };
-}
 
 // ── Domain Config Cache ───────────────────────────────────────────────────────
 
@@ -147,6 +131,15 @@ function writeDomainConfig(config: DomainConfig): void {
   emitLog("info", `domain-config.json updated (txId → ${txId})`);
 }
 
+// onError hook for the mutate tools: a write that throws (e.g. a failed
+// fs.writeFileSync) leaves txId un-bumped while the on-disk file may have
+// changed — and the watcher swallows its own event via expectedChanges — so the
+// client would never learn to reconcile. Bumping txId here forces a re-read.
+function onWriteError(err: unknown): void {
+  txId++;
+  emitLog("error", `domain-config.json write failed (txId → ${txId}): ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 server.registerTool(
@@ -174,7 +167,7 @@ server.registerTool(
           : "domain-index/index.md not found. Run 'npm run generate-domain' to generate it.";
         return notFound("read-domain-index", hint);
       }
-      return paginatedResponse(text, offset, limit);
+      return paginatedContent(text, { offset, limit }, staleFooter());
     })
 );
 
@@ -284,7 +277,7 @@ server.registerTool(
     },
   },
   async ({ overrides: newOverrides, txId: expectedTxId }) =>
-    rwlock.write(async () => {
+    rwlock.write(withMcpErrors(async () => {
       if (expectedTxId !== undefined && expectedTxId !== txId) {
         return {
           content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${txId}. Re-read state and retry.` }],
@@ -318,9 +311,8 @@ server.registerTool(
       const parts: string[] = [];
       if (added.length > 0) parts.push(`Added ${added.length}:\n${added.join("\n")}`);
       if (updated.length > 0) parts.push(`Updated ${updated.length}:\n${updated.join("\n")}`);
-      parts.push(`txId: ${txId}`);
-      return { content: [{ type: "text", text: parts.join("\n\n") }] };
-    })
+      return mcpContent(parts.join("\n\n"), `txId: ${txId}`);
+    }, { onError: onWriteError }))
 );
 
 server.registerTool(
@@ -339,7 +331,7 @@ server.registerTool(
     },
   },
   async ({ paths, txId: expectedTxId }) =>
-    rwlock.write(async () => {
+    rwlock.write(withMcpErrors(async () => {
       if (expectedTxId !== undefined && expectedTxId !== txId) {
         return {
           content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${txId}. Re-read state and retry.` }],
@@ -362,10 +354,8 @@ server.registerTool(
         return { content: [{ type: "text", text: "None of the specified paths were in overrides." }] };
       }
       writeDomainConfig(config);
-      return {
-        content: [{ type: "text", text: `Removed ${removed.length}:\n${removed.join("\n")}\n\ntxId: ${txId}` }],
-      };
-    })
+      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${txId}`);
+    }, { onError: onWriteError }))
 );
 
 server.registerTool(
