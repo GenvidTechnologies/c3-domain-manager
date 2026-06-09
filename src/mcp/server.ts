@@ -4,7 +4,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, paginateText, exposeDocs, loadProjectConfig, isMcpError } from "@genvid/mcp-utils";
+import { ReadWriteLock, ExpectedChanges, paginateText, exposeDocs, loadProjectConfig, isMcpError, READ_ONLY, REGENERATE, MUTATE } from "@genvid/mcp-utils";
 import type { Logger } from "@genvid/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
@@ -52,12 +52,6 @@ const rwlock = new ReadWriteLock();
 const expectedChanges = new ExpectedChanges();
 let domainConfigCache: DomainConfig | null = null;
 let domainDataCache: ComputeDomainDataResult | null = null;
-
-// ── Tool Annotations ─────────────────────────────────────────────────────────
-
-const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true } as const;
-const REGENERATE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true } as const;
-const MUTATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false } as const;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
