@@ -4,7 +4,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, paginateText, exposeDocs, loadProjectConfig, isMcpError, mcpContent, READ_ONLY, REGENERATE, MUTATE } from "@genvid/mcp-utils";
+import { ReadWriteLock, ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, READ_ONLY, REGENERATE, MUTATE } from "@genvid/mcp-utils";
 import type { Logger } from "@genvid/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
@@ -77,33 +77,23 @@ function notFound(tool: string, hint: string): { content: { type: "text"; text: 
   };
 }
 
-const STALE_WARNING = "\n\n[Warning: domain index may be stale — run regenerate to refresh]";
+const STALE_WARNING_LINE = "[Warning: domain index may be stale — run regenerate to refresh]";
+const STALE_WARNING = "\n\n" + STALE_WARNING_LINE;
 
 function appendStaleWarning(text: string): string {
   return domainDirty ? text + STALE_WARNING : text;
+}
+
+// Footer for paginatedContent on index reads: the stale warning rides as a
+// trailing footer line (omitted entirely when the index is fresh).
+function staleFooter(): (() => string) | undefined {
+  return domainDirty ? () => STALE_WARNING_LINE : undefined;
 }
 
 const PAGINATION_PARAMS = {
   offset: z.number().int().min(1).optional().describe("Start line (1-based). Omit to start from beginning."),
   limit: z.number().int().min(1).optional().describe("Max lines to return. Omit to return all."),
 };
-
-function paginatedResponse(
-  text: string,
-  offset: number | undefined,
-  limit: number | undefined,
-): { content: { type: "text"; text: string }[] } {
-  const paginated = paginateText(text, { offset, limit });
-  const content: { type: "text"; text: string }[] = [
-    { type: "text", text: appendStaleWarning(paginated.text) },
-  ];
-  if (offset !== undefined || limit !== undefined) {
-    const returnedLines = paginated.text === "" ? 0 : paginated.text.split("\n").length;
-    const endLine = paginated.offset + Math.max(0, returnedLines - 1);
-    content.push({ type: "text", text: `lines: ${paginated.offset}-${endLine} / ${paginated.totalLines}` });
-  }
-  return { content };
-}
 
 // ── Domain Config Cache ───────────────────────────────────────────────────────
 
@@ -168,7 +158,7 @@ server.registerTool(
           : "domain-index/index.md not found. Run 'npm run generate-domain' to generate it.";
         return notFound("read-domain-index", hint);
       }
-      return paginatedResponse(text, offset, limit);
+      return paginatedContent(text, { offset, limit }, staleFooter());
     })
 );
 
