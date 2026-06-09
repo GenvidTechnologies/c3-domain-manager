@@ -29,7 +29,7 @@ Note: both local development and CI use `npm` for these script names. CI runs th
 
 Two dependencies are published public packages on npm, installed normally via `npm install` (no special setup):
 
-`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`), the `EventSheet`/`Layout`/`FunctionParameter` types, and (since 1.1.0) the typed event-tree extractors `extractFunctions(sheet)` and `extractIncludes(sheet)` — we consume both instead of hand-rolling the walk. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `paginateText`, `exposeDocs`, `Logger`) and (since 0.3.0) the `loadProjectConfig(projectRoot, fileName, schema)` config loader plus its `isMcpError` guard — an async, never-throwing read+merge+zod-validate that returns either the typed config or a structured `CallToolResult` error.
+`@genvid/c3source` provides the Construct 3 file walkers (`find_all_eventsheets_path`, `find_all_layouts_path`), the `EventSheet`/`Layout`/`FunctionParameter` types, and (since 1.1.0) the typed event-tree extractors `extractFunctions(sheet)` and `extractIncludes(sheet)` — we consume both instead of hand-rolling the walk. `@genvid/mcp-utils` provides MCP plumbing (`ReadWriteLock`, `ExpectedChanges`, `exposeDocs`, `Logger`) and (since 0.3.0) the `loadProjectConfig(projectRoot, fileName, schema)` config loader plus its `isMcpError` guard — an async, never-throwing read+merge+zod-validate that returns either the typed config or a structured `CallToolResult` error — as well as the `paginatedContent` (paginated single-block response) and `READ_ONLY`/`REGENERATE`/`MUTATE` tool-annotation constants. Since 0.4.0 it also provides `mcpContent` (single-block result+footer helper) and `withMcpErrors` (wraps an async handler so thrown errors become `CallToolResult` errors; accepts an `onError` hook for side-effects on failure).
 
 ## TypeScript / module setup
 
@@ -62,7 +62,7 @@ All domain types are defined in `src/domain/types.ts` (`DomainConfig`, `DomainDe
 ### MCP server specifics (`src/mcp/server.ts`)
 
 - Auto-generates the domain index on startup if `extracted/domain-index/` is absent.
-- Holds mutable state behind a `ReadWriteLock`: a `txId` (monotonic) and a `domainDirty` flag. Mutate tools (`set-overrides`, `remove-overrides`) edit the target's `domain-config.json` and set `domainDirty`; read tools that depend on the index append a stale warning until `regenerate` clears it.
+- Holds mutable state behind a `ReadWriteLock`: a `txId` (monotonic) and a `domainDirty` flag. Mutate tools (`set-overrides`, `remove-overrides`) edit the target's `domain-config.json` and set `domainDirty`; their handlers are wrapped in `withMcpErrors` so any thrown error (e.g. a failed `fs.writeFileSync`) is returned as a `CallToolResult` error rather than crashing the server. An `onError` hook (`onWriteError`) bumps `txId` on write failure so the client knows to reconcile after a possibly-partial write. Successful mutate responses are built with `mcpContent(body, footer)` which appends the current `txId` as a trailing footer line. Read tools that depend on the index append a stale warning until `regenerate` clears it.
 - Tools accept an optional `txId` for optimistic concurrency — a write is rejected if it doesn't match the server's current `txId` (read it via `get-state`).
 - Tool annotations classify each tool as `READ_ONLY`, `REGENERATE`, or `MUTATE`.
 
