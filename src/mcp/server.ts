@@ -4,7 +4,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, READ_ONLY, REGENERATE, MUTATE } from "@genvid/mcp-utils";
+import { ReadWriteLock, ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, READ_ONLY, REGENERATE, MUTATE } from "@genvid/mcp-utils";
 import type { Logger } from "@genvid/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
@@ -129,6 +129,15 @@ function writeDomainConfig(config: DomainConfig): void {
   txId++;
   domainDirty = true;
   emitLog("info", `domain-config.json updated (txId → ${txId})`);
+}
+
+// onError hook for the mutate tools: a write that throws (e.g. a failed
+// fs.writeFileSync) leaves txId un-bumped while the on-disk file may have
+// changed — and the watcher swallows its own event via expectedChanges — so the
+// client would never learn to reconcile. Bumping txId here forces a re-read.
+function onWriteError(err: unknown): void {
+  txId++;
+  emitLog("error", `domain-config.json write failed (txId → ${txId}): ${err instanceof Error ? err.message : String(err)}`);
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
@@ -268,7 +277,7 @@ server.registerTool(
     },
   },
   async ({ overrides: newOverrides, txId: expectedTxId }) =>
-    rwlock.write(async () => {
+    rwlock.write(withMcpErrors(async () => {
       if (expectedTxId !== undefined && expectedTxId !== txId) {
         return {
           content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${txId}. Re-read state and retry.` }],
@@ -303,7 +312,7 @@ server.registerTool(
       if (added.length > 0) parts.push(`Added ${added.length}:\n${added.join("\n")}`);
       if (updated.length > 0) parts.push(`Updated ${updated.length}:\n${updated.join("\n")}`);
       return mcpContent(parts.join("\n\n"), `txId: ${txId}`);
-    })
+    }, { onError: onWriteError }))
 );
 
 server.registerTool(
@@ -322,7 +331,7 @@ server.registerTool(
     },
   },
   async ({ paths, txId: expectedTxId }) =>
-    rwlock.write(async () => {
+    rwlock.write(withMcpErrors(async () => {
       if (expectedTxId !== undefined && expectedTxId !== txId) {
         return {
           content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${txId}. Re-read state and retry.` }],
@@ -346,7 +355,7 @@ server.registerTool(
       }
       writeDomainConfig(config);
       return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${txId}`);
-    })
+    }, { onError: onWriteError }))
 );
 
 server.registerTool(
