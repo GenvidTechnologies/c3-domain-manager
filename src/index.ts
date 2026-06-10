@@ -9,3 +9,4 @@ export * from "./domain/glossary.js";
 export * from "./domain/relationships.js";
 export * from "./domain/health.js";
 export * from "./domain/contextMap.js";
+export * from "./domain/editorValidation.js";
