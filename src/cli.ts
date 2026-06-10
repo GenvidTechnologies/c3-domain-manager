@@ -7,6 +7,7 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides } from "./domain/domainAnalysis.js";
+import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
 import { resolveLocations } from "./adapters/locations.js";
 
 const PROJECT_ROOT = process.cwd();
@@ -72,6 +73,17 @@ yargs(hideBin(process.argv))
         console.log(`${stale.length} stale override(s):\n`);
         for (const s of stale) console.log(s);
       }
+    },
+  )
+  .command(
+    "validate-editor",
+    "Report event sheets the C3 editor would reject (editor-strictness validation)",
+    () => {},
+    async (argv) => {
+      const loc = resolveLocations({ config: argv.config as string | undefined }, PROJECT_ROOT);
+      const config = await loadConfig(loc.configDir, loc.configFileName);
+      const report = validateEditorStrictness(PROJECT_ROOT, config);
+      console.log(formatEditorStrictnessReport(report));
     },
   )
   .option("config", {
