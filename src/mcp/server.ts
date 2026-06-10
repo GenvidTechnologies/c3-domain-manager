@@ -13,6 +13,7 @@ import { DomainConfigSchema } from "../domain/types.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { collectGlossary, findCollisions, formatGlossaryReport } from "../domain/glossary.js";
 import { validateBoundaries, formatBoundaryReport } from "../domain/relationships.js";
+import { validateEditorStrictness, formatEditorStrictnessReport } from "../domain/editorValidation.js";
 import { computeHealth, formatHealthReport } from "../domain/health.js";
 import { generateContextMap } from "../domain/contextMap.js";
 import {
@@ -460,6 +461,30 @@ server.registerTool(
         return { content: [{ type: "text", text: appendStaleWarning(text) }] };
       } catch (e) {
         return notFound("validate-boundaries", `Error: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    })
+);
+
+server.registerTool(
+  "validate-editor",
+  {
+    title: "Validate Editor Strictness",
+    description:
+      "Report event sheets the C3 editor would reject on import (editor-strictness validation). Flags variable events missing a comment and group events missing a description — fields the C3 editor loader requires but the lenient parse types allow to be absent. Validates sheets fresh from disk, so its result is independent of domain-index staleness.",
+    annotations: READ_ONLY,
+    inputSchema: {},
+  },
+  async () =>
+    rwlock.read(async () => {
+      try {
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
+        const report = validateEditorStrictness(PROJECT_ROOT, config);
+        // No appendStaleWarning: this diagnostic re-walks sheets fresh and never
+        // reads the cached domain index, so the index-staleness warning would mislead.
+        return { content: [{ type: "text", text: formatEditorStrictnessReport(report) }] };
+      } catch (e) {
+        return notFound("validate-editor", `Error: ${e instanceof Error ? e.message : String(e)}`);
       }
     })
 );
