@@ -33,6 +33,8 @@ Two dependencies are published public packages on npm, installed normally via `n
 
 **When bumping `@genvid/mcp-utils`, audit `src/mcp/server.ts` for hand-rolled equivalents of its exported helpers** — the annotation constants, `mcpContent`, `paginatedContent`, and `withMcpErrors` all sat hand-rolled until the 0.4.0 bump adopted them (some had been available since 0.3.0). Verify a release's actual API against the packed types (`npm pack @genvid/mcp-utils@<version>` → `package/dist/*.d.ts`), not just the release notes.
 
+**When bumping `@genvid/c3source`, check whether new exports supersede local C3-parsing logic** — c3source owns the Construct 3 platform facts, so its releases tend to ship primitives that retire hand-rolled equivalents here. `extractFunctions`/`extractIncludes` (1.1.0) retired the local `src/domain/extraction.ts` walk in 0.2.0; `validateForEditor` (1.4.0) was adopted as `editorValidation.ts`; and 1.4.0's event-var-reference primitives (`isEventVarReference`/`getEventVarReferenceName`/`EVENTVAR_REFERENCE_ACES`) remain un-adopted (a deferred dependency-graph enrichment). As with mcp-utils, treat the release notes as a hypothesis and verify the actual surface against the packed `.d.ts` — **and confirm the integration site the issue assumes actually exists** (issue #12 framed `validateForEditor` as a guard "before write-out," but this tool never writes C3 sheets, so it became a read-side diagnostic instead).
+
 ## TypeScript / module setup
 
 - Pure ESM (`"type": "module"`), `NodeNext` resolution, Node >= 22. Relative imports **must** use `.js` extensions even though sources are `.ts`.
