@@ -58,6 +58,10 @@ export interface DomainData {
   functions: FunctionDef[];
   includesFrom: Map<string, string[]>;
   includedBy: Map<string, string[]>;
+  /** domain → variable names this domain references that the keyed domain declares (event-variable coupling, outgoing) */
+  referencesFrom: Map<string, string[]>;
+  /** domain → variable names of this domain's that the keyed domain references (event-variable coupling, incoming) */
+  referencedBy: Map<string, string[]>;
   /** True if this domain is a shared subdomain (from config.sharedSubdomains) */
   isSharedSubdomain?: boolean;
   /** Strategic classification from DDD */

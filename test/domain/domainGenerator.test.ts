@@ -3,8 +3,9 @@ import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { computeDomainData, loadConfig } from "../../src/domain/domainGenerator.js";
+import { computeDomainData, loadConfig, extractEventVarDecls, extractEventVarRefs } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig } from "../../src/domain/types.js";
+import type { EventSheet } from "@genvid/c3source";
 
 /** Create a file (and its parent directories) in the temp dir. */
 function createFile(rootDir: string, relativePath: string, content = ""): void {
@@ -208,5 +209,179 @@ describe("loadConfig", () => {
 
     assert.isDefined(caught, "loadConfig should have thrown");
     assert.include(caught!.message, "domains");
+  });
+});
+
+describe("extractEventVarDecls", () => {
+  it("returns names of root-level variable events", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        { eventType: "variable", name: "score", type: "number", initialValue: "0", isStatic: false, isConstant: false, sid: 10 },
+        { eventType: "variable", name: "lives", type: "number", initialValue: "3", isStatic: false, isConstant: false, sid: 11 },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarDecls(sheet);
+
+    assert.deepEqual(result, ["score", "lives"]);
+  });
+
+  it("returns [] for a sheet with no variable events", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        { eventType: "block", conditions: [], actions: [], sid: 20 },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarDecls(sheet);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("does NOT pick up variable events nested inside a group", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "group",
+          name: "MyGroup",
+          sid: 30,
+          children: [
+            { eventType: "variable", name: "nested", type: "number", initialValue: "0", isStatic: false, isConstant: false, sid: 31 },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarDecls(sheet);
+
+    // Only root-level variables are indexed; the nested one is not returned
+    assert.deepEqual(result, []);
+  });
+});
+
+describe("extractEventVarRefs", () => {
+  it("collects a var name from a System compare-eventvar condition", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 100,
+          conditions: [
+            { id: "compare-eventvar", objectClass: "System", sid: 101, parameters: { variable: "score" } },
+          ],
+          actions: [],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, ["score"]);
+  });
+
+  it("collects a var name from a System set-eventvar-value action", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 200,
+          conditions: [],
+          actions: [
+            { id: "set-eventvar-value", objectClass: "System", sid: 201, parameters: { variable: "lives" } },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, ["lives"]);
+  });
+
+  it("dedupes a var name referenced twice", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 300,
+          conditions: [
+            { id: "compare-eventvar", objectClass: "System", sid: 301, parameters: { variable: "score" } },
+          ],
+          actions: [
+            { id: "set-eventvar-value", objectClass: "System", sid: 302, parameters: { variable: "score" } },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, ["score"]);
+  });
+
+  it("ignores a non-System ACE with an eventvar id", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 400,
+          conditions: [
+            { id: "compare-eventvar", objectClass: "Sprite", sid: 401, parameters: { variable: "score" } },
+          ],
+          actions: [],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("ignores an ACE whose id is not an eventvar id", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 500,
+          conditions: [
+            { id: "on-start-of-layout", objectClass: "System", sid: 501, parameters: {} },
+          ],
+          actions: [],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("returns [] for an empty sheet", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [],
+    } as unknown as EventSheet;
+
+    const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, []);
   });
 });

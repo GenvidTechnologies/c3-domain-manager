@@ -5,8 +5,12 @@ import {
   find_all_layouts_path,
   extractFunctions,
   extractIncludes,
+  visitEvents,
+  hasConditions,
+  hasActions,
+  getEventVarReferenceName,
 } from "@genvid/c3source";
-import type { EventSheet, Layout, FunctionParameter } from "@genvid/c3source";
+import type { EventSheet, EventSheetEvent, Layout, FunctionParameter } from "@genvid/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
@@ -33,6 +37,41 @@ export function extractFunctionDefs(sheet: EventSheet, sheetName: string): Funct
     objectClass: f.objectClass,
     aceName: f.kind === "custom-ace" ? f.name : undefined,
   }));
+}
+
+/**
+ * Top-level (sheet-root ≈ global-scope) event-variable declaration names for a sheet.
+ * Only root-level `variable` events are indexed — cross-sheet references in C3 require
+ * global variables, so root-level declarations are the global-scope approximation.
+ */
+export function extractEventVarDecls(sheet: EventSheet): string[] {
+  return sheet.events
+    .filter((e): e is Extract<EventSheetEvent, { eventType: "variable" }> => e.eventType === "variable")
+    .map((e) => e.name);
+}
+
+/**
+ * Deduped event-variable names referenced by System ACEs anywhere in a sheet's event tree.
+ * Walks every condition and action via `visitEvents`, applying c3source's
+ * `getEventVarReferenceName` (which gates on `objectClass === "System"`).
+ */
+export function extractEventVarRefs(sheet: EventSheet): string[] {
+  const names = new Set<string>();
+  visitEvents(sheet.events, (event) => {
+    if (hasConditions(event)) {
+      for (const cond of event.conditions) {
+        const name = getEventVarReferenceName(cond);
+        if (name !== null) names.add(name);
+      }
+    }
+    if (hasActions(event)) {
+      for (const action of event.actions) {
+        const name = getEventVarReferenceName(action);
+        if (name !== null) names.add(name);
+      }
+    }
+  });
+  return [...names];
 }
 
 export async function loadConfig(projectRoot: string, fileName: string): Promise<DomainConfig> {
@@ -109,6 +148,8 @@ export function computeDomainData(
       functions: [],
       includesFrom: new Map(),
       includedBy: new Map(),
+      referencesFrom: new Map(),
+      referencedBy: new Map(),
       strategy: def.strategy,
     });
   }
@@ -125,6 +166,8 @@ export function computeDomainData(
         functions: [],
         includesFrom: new Map(),
         includedBy: new Map(),
+        referencesFrom: new Map(),
+        referencedBy: new Map(),
         isSharedSubdomain: true,
         strategy: def.strategy,
       });
