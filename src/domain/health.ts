@@ -1,16 +1,16 @@
 import type { DomainData } from "./types.js";
 
 export interface HealthMetrics {
-  ca: number; // afferent coupling — distinct domains that include sheets from this domain
-  ce: number; // efferent coupling — distinct domains this domain includes from
+  ca: number; // afferent coupling — distinct domains coupled to this one via includes OR event-variable references
+  ce: number; // efferent coupling — distinct domains this domain depends on via includes OR event-variable references
   instability: number; // Ce / (Ca + Ce), 0 when Ca + Ce = 0
   coverage: number; // 1 if domain has any files, 0 otherwise
 }
 
 /** Compute health metrics for a single domain. */
 export function computeHealth(domain: DomainData): HealthMetrics {
-  const ca = domain.includedBy.size;
-  const ce = domain.includesFrom.size;
+  const ce = new Set([...domain.includesFrom.keys(), ...domain.referencesFrom.keys()]).size;
+  const ca = new Set([...domain.includedBy.keys(), ...domain.referencedBy.keys()]).size;
   const instability = ca + ce === 0 ? 0 : ce / (ca + ce);
   const coverage =
     domain.eventSheets.length + domain.layouts.length + domain.scripts.length > 0 ? 1 : 0;

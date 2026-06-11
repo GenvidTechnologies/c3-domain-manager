@@ -13,6 +13,8 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     functions: opts?.functions ?? [],
     includesFrom: opts?.includesFrom ?? new Map(),
     includedBy: opts?.includedBy ?? new Map(),
+    referencesFrom: opts?.referencesFrom ?? new Map(),
+    referencedBy: opts?.referencedBy ?? new Map(),
     strategy: opts?.strategy,
   };
 }
@@ -143,6 +145,72 @@ describe("formatting — strategy classification", () => {
       const descIdx = result.indexOf("Description text");
       const stratIdx = result.indexOf("**Strategy:** generic");
       assert.isAbove(stratIdx, descIdx);
+    });
+  });
+
+  describe("formatDomainPage — event-variable reference sections", () => {
+    it("renders outgoing references section when referencesFrom is non-empty", () => {
+      const domain = makeDomain("Combat", {
+        referencesFrom: new Map([["UI", ["lives", "score"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "### Event-variable references from this domain");
+      assert.include(result, "→ UI (2 variables): lives, score");
+    });
+
+    it("renders incoming references section when referencedBy is non-empty", () => {
+      const domain = makeDomain("UI", {
+        referencedBy: new Map([["Combat", ["score"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "### Event-variable references into this domain");
+      assert.include(result, "← Combat: score");
+    });
+
+    it("uses singular 'variable' wording for a single variable", () => {
+      const domain = makeDomain("Combat", {
+        referencesFrom: new Map([["UI", ["score"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "→ UI (1 variable): score");
+    });
+
+    it("truncates variable lists longer than 5 with ', ...'", () => {
+      const domain = makeDomain("Combat", {
+        referencesFrom: new Map([["UI", ["a", "b", "c", "d", "e", "f"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "→ UI (6 variables): a, b, c, d, e, ...");
+    });
+
+    it("sorts variables alphabetically", () => {
+      const domain = makeDomain("Combat", {
+        referencesFrom: new Map([["UI", ["score", "lives"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "→ UI (2 variables): lives, score");
+    });
+
+    it("does not emit event-variable sections when both maps are empty", () => {
+      const domain = makeDomain("NoCoupling");
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "Event-variable references");
+    });
+
+    it("does not emit outgoing section when only referencedBy is set", () => {
+      const domain = makeDomain("UI", {
+        referencedBy: new Map([["Combat", ["score"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "### Event-variable references from this domain");
+    });
+
+    it("does not emit incoming section when only referencesFrom is set", () => {
+      const domain = makeDomain("Combat", {
+        referencesFrom: new Map([["UI", ["score"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "### Event-variable references into this domain");
     });
   });
 

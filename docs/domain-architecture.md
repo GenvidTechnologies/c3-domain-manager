@@ -96,7 +96,7 @@ Optional. Declares the expected integration patterns between domains using DDD r
 | `anti-corruption-layer` | Downstream translates upstream's model through an adapter |
 | `open-host-service` | Upstream publishes a stable protocol for any consumer |
 
-Declared relationships are checked by `validate-boundaries`. Observed dependencies (found in event sheet includes) that are not declared produce warnings.
+Declared relationships are checked by `validate-boundaries`. Observed dependencies (found in event sheet includes and event-variable references) that are not declared produce warnings.
 
 ### Validation
 
@@ -140,6 +140,7 @@ Running `c3-domain-manager generate` (or `regenerate` via MCP) writes files to `
   - File lists (event sheets, layouts, scripts)
   - Exported function signatures extracted from event sheets
   - Include graph (which sheets include which, within and across domains)
+  - Event-variable reference graph (cross-domain references to/from this domain, when present)
   - Cross-domain dependency summary
 
 Commit `extracted/domain-index/` to version control so the index is always available without regenerating.
@@ -159,12 +160,44 @@ Relative paths for both flags resolve against the **target project root** (the p
 
 When using the MCP server, the resolved locations are forwarded from the CLI `server` command via `startServer(loc: ResolvedLocations)`. There are no environment variables.
 
+## Cross-domain coupling sources
+
+Two independent sources contribute to the observed coupling graph between domains:
+
+### Include coupling
+
+Event sheets can include other event sheets using include events. When a sheet in domain A includes a sheet in domain B, that creates an include edge from A to B. The include graph is stored in `DomainData` as `includesFrom` (outgoing: A → B, payload = included sheet names) and `includedBy` (incoming: B ← A, same payload).
+
+### Event-variable reference coupling
+
+C3 event sheets can also reference event variables declared in other sheets via System ACEs. When a sheet in domain A references a variable that is declared in domain B, that creates a reference edge from A to B. The reference graph is stored as two sibling maps alongside the include maps: `referencesFrom` (outgoing: A → B, payload = variable names) and `referencedBy` (incoming: B ← A, same payload).
+
+**Resolution policy:**
+
+- **Global-scope approximation** — only top-level (sheet-root) `variable` events are indexed as declarations. C3 cross-sheet variable references require global variables, and root-level declarations are the global-scope approximation. Local variables declared inside groups or functions are deliberately excluded.
+- **Attribute-to-all on collision** — if the same variable name is declared at the top level of sheets in multiple domains, a reference to that name creates an edge to every declaring domain.
+- **Unresolved references produce no edge** — if the referenced variable name has no indexed (root-level) declaration anywhere in the project, the reference is silently ignored. There is no diagnostics bucket for unresolved names.
+- **Same-domain references produce no edge** — consistent with include coupling, references resolved to the same domain as the referencing sheet are not recorded.
+
+**Limitation:** only top-level declarations are indexed. Variables scoped inside a group or function block are not visible across sheets in C3, so excluding them is correct behaviour. A variable declared inside a block but referenced from another sheet would be unresolvable and fall into the "unresolved → no edge" path above.
+
+No `domain-config.json` schema change is required — reference coupling is derived entirely from event sheet content and does not need configuration.
+
+### How coupling surfaces in analysis
+
+Both coupling sources are aggregated with **union semantics** across all downstream consumers:
+
+- **Health metrics** (`computeHealth`) — Ca and Ce count the union of include-coupled and reference-coupled distinct domains, with overlap deduped (a domain that is both include-coupled and reference-coupled is counted only once).
+- **Boundary validation** (`validateBoundaries`) — the undeclared-dependency and forbidden-direction checks operate over the union of include and reference target domains. A reference edge to an undeclared domain produces an `undeclared` violation exactly as an include edge would.
+- **Context map** (`generateContextMap`) — reference coupling surfaces as a distinct `observed-ref` edge kind. In text format it appears as `[observed-ref]`; in Mermaid it renders as `-.->|var|`. Edge precedence is: declared > observed (include) > observed-ref. An include and a reference to the same domain pair produce only the higher-precedence edge.
+- **Domain pages** (`formatDomainPage`) — the "Cross-Domain Dependencies" section gains two subsections: "Event-variable references from this domain" and "Event-variable references into this domain", rendered only when the respective map is non-empty.
+
 ## Health metrics
 
 `domain-health` (MCP tool or library `computeHealth`) computes per-domain:
 
-- **Ca (afferent coupling)** — how many other domains depend on this domain
-- **Ce (efferent coupling)** — how many domains this domain depends on
+- **Ca (afferent coupling)** — how many other domains depend on this domain (via includes or event-variable references)
+- **Ce (efferent coupling)** — how many domains this domain depends on (via includes or event-variable references)
 - **Instability** — `Ce / (Ca + Ce)`, range 0–1. 0 is maximally stable (nothing it depends on can break it); 1 is maximally unstable (many dependencies, no dependents)
 
 High instability in a core domain is a warning sign.
@@ -173,7 +206,7 @@ High instability in a core domain is a warning sign.
 
 `validate-boundaries` (MCP tool or library `validateBoundaries`) checks:
 
-- **Undeclared dependencies** — domain A includes sheets from domain B, but no relationship is declared from A to B
+- **Undeclared dependencies** — domain A includes sheets from domain B, or references event-variables declared in domain B, but no relationship is declared from A to B
 - **Stale declarations** — a declared relationship has no corresponding observed dependency
 - **Forbidden directions** — e.g. a `supporting` domain depending on a `core` domain
 

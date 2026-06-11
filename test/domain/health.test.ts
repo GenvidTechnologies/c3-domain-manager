@@ -13,6 +13,8 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     functions: opts?.functions ?? [],
     includesFrom: opts?.includesFrom ?? new Map(),
     includedBy: opts?.includedBy ?? new Map(),
+    referencesFrom: opts?.referencesFrom ?? new Map(),
+    referencedBy: opts?.referencedBy ?? new Map(),
   };
 }
 
@@ -95,6 +97,55 @@ describe("health", () => {
     it("returns coverage=0 for domain with no files", () => {
       const domain = makeDomain("NoFiles");
       assert.equal(computeHealth(domain).coverage, 0);
+    });
+
+    it("reference-only Ce=1 when referencesFrom has one entry and includesFrom is empty", () => {
+      const domain = makeDomain("RefOnly", {
+        referencesFrom: new Map([["B", ["score"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 1);
+      assert.equal(metrics.ca, 0);
+    });
+
+    it("reference-only Ca=1 when referencedBy has one entry and includedBy is empty", () => {
+      const domain = makeDomain("RefOnlyCa", {
+        referencedBy: new Map([["A", ["x"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ca, 1);
+      assert.equal(metrics.ce, 0);
+    });
+
+    it("union dedup: Ce=1 when domain both includesFrom B and referencesFrom B", () => {
+      const domain = makeDomain("Overlap", {
+        includesFrom: new Map([["B", ["sheet1"]]]),
+        referencesFrom: new Map([["B", ["score"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 1);
+    });
+
+    it("disjoint union: Ce=2 when includesFrom B and referencesFrom C", () => {
+      const domain = makeDomain("Disjoint", {
+        includesFrom: new Map([["B", ["sheet1"]]]),
+        referencesFrom: new Map([["C", ["health"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 2);
+    });
+
+    it("instability reflects union-based ce/ca: Ce=2 Ca=1 yields Instability=2/3", () => {
+      // include-only would give Ce=1; adding a ref to a new domain bumps Ce to 2
+      const domain = makeDomain("UnionInstability", {
+        includesFrom: new Map([["B", ["sheet1"]]]),
+        referencesFrom: new Map([["C", ["score"]]]),
+        referencedBy: new Map([["A", ["x"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 2);
+      assert.equal(metrics.ca, 1);
+      assert.approximately(metrics.instability, 2 / 3, 0.001);
     });
   });
 

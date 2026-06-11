@@ -454,4 +454,29 @@ function formatCrossDomainSection(domain: DomainData, lines: string[]): void {
     }
   }
   lines.push("");
+
+  // Event-variable references from this domain (outgoing) \u2014 only when present
+  if (domain.referencesFrom.size > 0) {
+    lines.push("### Event-variable references from this domain");
+    const sortedDomains = Array.from(domain.referencesFrom.keys()).sort();
+    for (const targetDomain of sortedDomains) {
+      const vars = [...domain.referencesFrom.get(targetDomain)!].sort();
+      const count = vars.length;
+      const varList = vars.length > 5 ? vars.slice(0, 5).join(", ") + ", ..." : vars.join(", ");
+      lines.push(`- \u2192 ${targetDomain} (${count} ${count === 1 ? "variable" : "variables"}): ${varList}`);
+    }
+    lines.push("");
+  }
+
+  // Event-variable references into this domain (incoming) \u2014 only when present
+  if (domain.referencedBy.size > 0) {
+    lines.push("### Event-variable references into this domain");
+    const sortedDomains = Array.from(domain.referencedBy.keys()).sort();
+    for (const sourceDomain of sortedDomains) {
+      const vars = [...domain.referencedBy.get(sourceDomain)!].sort();
+      const varList = vars.length > 5 ? vars.slice(0, 5).join(", ") + ", ..." : vars.join(", ");
+      lines.push(`- \u2190 ${sourceDomain}: ${varList}`);
+    }
+    lines.push("");
+  }
 }

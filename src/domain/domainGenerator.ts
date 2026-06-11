@@ -5,8 +5,12 @@ import {
   find_all_layouts_path,
   extractFunctions,
   extractIncludes,
+  visitEvents,
+  hasConditions,
+  hasActions,
+  getEventVarReferenceName,
 } from "@genvid/c3source";
-import type { EventSheet, Layout, FunctionParameter } from "@genvid/c3source";
+import type { EventSheet, EventSheetEvent, Layout, FunctionParameter } from "@genvid/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
@@ -33,6 +37,41 @@ export function extractFunctionDefs(sheet: EventSheet, sheetName: string): Funct
     objectClass: f.objectClass,
     aceName: f.kind === "custom-ace" ? f.name : undefined,
   }));
+}
+
+/**
+ * Top-level (sheet-root ≈ global-scope) event-variable declaration names for a sheet.
+ * Only root-level `variable` events are indexed — cross-sheet references in C3 require
+ * global variables, so root-level declarations are the global-scope approximation.
+ */
+export function extractEventVarDecls(sheet: EventSheet): string[] {
+  return sheet.events
+    .filter((e): e is Extract<EventSheetEvent, { eventType: "variable" }> => e.eventType === "variable")
+    .map((e) => e.name);
+}
+
+/**
+ * Deduped event-variable names referenced by System ACEs anywhere in a sheet's event tree.
+ * Walks every condition and action via `visitEvents`, applying c3source's
+ * `getEventVarReferenceName` (which gates on `objectClass === "System"`).
+ */
+export function extractEventVarRefs(sheet: EventSheet): string[] {
+  const names = new Set<string>();
+  visitEvents(sheet.events, (event) => {
+    if (hasConditions(event)) {
+      for (const cond of event.conditions) {
+        const name = getEventVarReferenceName(cond);
+        if (name !== null) names.add(name);
+      }
+    }
+    if (hasActions(event)) {
+      for (const action of event.actions) {
+        const name = getEventVarReferenceName(action);
+        if (name !== null) names.add(name);
+      }
+    }
+  });
+  return [...names];
 }
 
 export async function loadConfig(projectRoot: string, fileName: string): Promise<DomainConfig> {
@@ -109,6 +148,8 @@ export function computeDomainData(
       functions: [],
       includesFrom: new Map(),
       includedBy: new Map(),
+      referencesFrom: new Map(),
+      referencedBy: new Map(),
       strategy: def.strategy,
     });
   }
@@ -125,6 +166,8 @@ export function computeDomainData(
         functions: [],
         includesFrom: new Map(),
         includedBy: new Map(),
+        referencesFrom: new Map(),
+        referencedBy: new Map(),
         isSharedSubdomain: true,
         strategy: def.strategy,
       });
@@ -134,6 +177,8 @@ export function computeDomainData(
   // Classify and parse eventSheets
   const sheetDomainLookup = new Map<string, string>(); // sheetName → domainName
   const rawIncludes = new Map<string, string[]>(); // domainName → raw include sheet names
+  const varDeclIndex = new Map<string, Set<string>>(); // variable name → set of declaring domains
+  const rawRefs = new Map<string, string[]>(); // domainName → referenced variable names (raw)
 
   for (const sheetPath of eventSheetPaths) {
     const relPath = path.relative(rootDir, sheetPath).replace(/\\/g, "/");
@@ -172,6 +217,20 @@ export function computeDomainData(
       const existing = rawIncludes.get(domain) ?? [];
       existing.push(...includes);
       rawIncludes.set(domain, existing);
+    }
+
+    // Index top-level variable declarations: variable name → declaring domains
+    for (const varName of extractEventVarDecls(sheet)) {
+      if (!varDeclIndex.has(varName)) varDeclIndex.set(varName, new Set());
+      varDeclIndex.get(varName)!.add(domain);
+    }
+
+    // Accumulate event-variable references for cross-domain resolution later
+    const refs = extractEventVarRefs(sheet);
+    if (refs.length > 0) {
+      const existing = rawRefs.get(domain) ?? [];
+      existing.push(...refs);
+      rawRefs.set(domain, existing);
     }
   }
 
@@ -237,6 +296,31 @@ export function computeDomainData(
           if (!targetList.includes(includedSheetName)) {
             targetList.push(includedSheetName);
           }
+        }
+      }
+    }
+  }
+
+  // Resolve cross-domain dependencies from event-variable references.
+  // A reference resolves to EVERY domain that declares a top-level variable of that
+  // name (attribute-to-all on collision); same-domain and unresolved names are skipped.
+  for (const [domainName, domainData] of domainDataMap) {
+    const refs = rawRefs.get(domainName) ?? [];
+    for (const varName of refs) {
+      const declaringDomains = varDeclIndex.get(varName);
+      if (!declaringDomains) continue; // unresolved — no global declaration
+      for (const targetDomain of declaringDomains) {
+        if (targetDomain === domainName) continue; // same-domain — not cross-domain
+        // referencesFrom: domainName → targetDomain (var names)
+        if (!domainData.referencesFrom.has(targetDomain)) domainData.referencesFrom.set(targetDomain, []);
+        const out = domainData.referencesFrom.get(targetDomain)!;
+        if (!out.includes(varName)) out.push(varName);
+        // referencedBy on the target
+        const targetData = domainDataMap.get(targetDomain);
+        if (targetData) {
+          if (!targetData.referencedBy.has(domainName)) targetData.referencedBy.set(domainName, []);
+          const inc = targetData.referencedBy.get(domainName)!;
+          if (!inc.includes(varName)) inc.push(varName);
         }
       }
     }

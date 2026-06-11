@@ -13,6 +13,8 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     functions: opts?.functions ?? [],
     includesFrom: opts?.includesFrom ?? new Map(),
     includedBy: opts?.includedBy ?? new Map(),
+    referencesFrom: opts?.referencesFrom ?? new Map(),
+    referencedBy: opts?.referencedBy ?? new Map(),
     strategy: opts?.strategy,
   };
 }
@@ -133,6 +135,55 @@ describe("relationships", () => {
       assert.deepEqual(forbidden, []);
     });
 
+    it("reference edge to undeclared domain → undeclared violation", () => {
+      const domains = [makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }), makeDomain("B")];
+      const config = makeConfig();
+      const report = validateBoundaries(domains, config);
+      assert.equal(report.violations.length, 1);
+      assert.equal(report.violations[0].type, "undeclared");
+      assert.equal(report.violations[0].from, "A");
+      assert.equal(report.violations[0].to, "B");
+    });
+
+    it("reference edge covered by a declared relationship → no violation", () => {
+      const domains = [makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }), makeDomain("B")];
+      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const report = validateBoundaries(domains, config);
+      assert.deepEqual(report.violations, []);
+    });
+
+    it("include + reference to same target → single undeclared violation", () => {
+      const domains = [
+        makeDomain("A", {
+          includesFrom: new Map([["B", ["B/Sheet.json"]]]),
+          referencesFrom: new Map([["B", ["score"]]]),
+        }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const report = validateBoundaries(domains, config);
+      const undeclared = report.violations.filter((v) => v.type === "undeclared");
+      assert.equal(undeclared.length, 1);
+      assert.equal(undeclared[0].from, "A");
+      assert.equal(undeclared[0].to, "B");
+    });
+
+    it("supporting domain references core domain via reference edge → forbidden violation", () => {
+      const domains = [
+        makeDomain("Support", {
+          strategy: "supporting",
+          referencesFrom: new Map([["Core", ["health"]]]),
+        }),
+        makeDomain("Core", { strategy: "core" }),
+      ];
+      const config = makeConfig([{ from: "Core", to: "Support", type: "customer-supplier" }]);
+      const report = validateBoundaries(domains, config);
+      assert.equal(report.violations.length, 1);
+      assert.equal(report.violations[0].type, "forbidden");
+      assert.include(report.violations[0].message, "Support");
+      assert.include(report.violations[0].message, "Core");
+    });
+
     it("filterDomain returns only that domain's violations", () => {
       const domains = [
         makeDomain("Auth", { includesFrom: new Map([["Combat", ["Combat/Sheet.json"]]]) }),
@@ -173,7 +224,12 @@ describe("relationships", () => {
     it("includes violation count in header when violations exist", () => {
       const report = {
         violations: [
-          { type: "undeclared" as const, message: "Auth depends on Combat but no relationship declared", from: "Auth", to: "Combat" },
+          {
+            type: "undeclared" as const,
+            message: "Auth depends on Combat but no relationship declared",
+            from: "Auth",
+            to: "Combat",
+          },
         ],
       };
       const text = formatBoundaryReport(report);
@@ -184,9 +240,19 @@ describe("relationships", () => {
     it("includes violation type and message in output", () => {
       const report = {
         violations: [
-          { type: "undeclared" as const, message: "Auth depends on Combat but no relationship declared", from: "Auth", to: "Combat" },
+          {
+            type: "undeclared" as const,
+            message: "Auth depends on Combat but no relationship declared",
+            from: "Auth",
+            to: "Combat",
+          },
           { type: "stale" as const, message: "Relationship references unknown domain: Ghost" },
-          { type: "forbidden" as const, message: "Supporting domain 'Support' depends on core domain 'Core'", from: "Support", to: "Core" },
+          {
+            type: "forbidden" as const,
+            message: "Supporting domain 'Support' depends on core domain 'Core'",
+            from: "Support",
+            to: "Core",
+          },
         ],
       };
       const text = formatBoundaryReport(report);

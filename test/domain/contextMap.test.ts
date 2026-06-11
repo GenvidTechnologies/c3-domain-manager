@@ -13,6 +13,8 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     functions: opts?.functions ?? [],
     includesFrom: opts?.includesFrom ?? new Map(),
     includedBy: opts?.includedBy ?? new Map(),
+    referencesFrom: opts?.referencesFrom ?? new Map(),
+    referencedBy: opts?.referencedBy ?? new Map(),
   };
 }
 
@@ -203,6 +205,77 @@ describe("contextMap", () => {
       const result = generateContextMap(domains, config, { format: "text", domain: "Auth" });
       assert.include(result, "Auth");
       assert.include(result, "Core");
+      assert.notInclude(result, "Unrelated");
+    });
+  });
+
+  describe("generateContextMap - observed-ref edges", () => {
+    it("observed-ref edge in text: A referencesFrom B → shows [observed-ref]", () => {
+      const domains = [
+        makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [observed-ref]");
+      assert.include(result, "← A [observed-ref]");
+    });
+
+    it("observed-ref edge in mermaid: A referencesFrom B → dotted arrow with var label", () => {
+      const domains = [
+        makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "mermaid", includeObserved: true });
+      assert.include(result, "-.->|var|");
+    });
+
+    it("precedence: include wins over ref — only [observed] edge, no [observed-ref]", () => {
+      const domains = [
+        makeDomain("A", {
+          includesFrom: new Map([["B", ["B/Sheet.json"]]]),
+          referencesFrom: new Map([["B", ["score"]]]),
+        }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [observed]");
+      assert.notInclude(result, "observed-ref");
+    });
+
+    it("precedence: declared wins — declared type rendered, no observed-ref edge", () => {
+      const domains = [
+        makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [customer-supplier]");
+      assert.notInclude(result, "observed-ref");
+    });
+
+    it("includeObserved:false suppresses observed-ref edges", () => {
+      const domains = [
+        makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: false });
+      assert.notInclude(result, "observed-ref");
+    });
+
+    it("focus-domain neighbor via reference: domain B included when A referencesFrom B", () => {
+      const domains = [
+        makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }),
+        makeDomain("B"),
+        makeDomain("Unrelated"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", domain: "A" });
+      assert.include(result, "A");
+      assert.include(result, "B");
       assert.notInclude(result, "Unrelated");
     });
   });

@@ -1,5 +1,10 @@
 import type { DomainConfig, DomainData } from "./types.js";
 
+/** Distinct domains this domain couples TO, via includes OR event-variable references. */
+function outgoingCoupledDomains(domain: DomainData): string[] {
+  return [...new Set([...domain.includesFrom.keys(), ...domain.referencesFrom.keys()])];
+}
+
 export interface BoundaryViolation {
   type: "undeclared" | "stale" | "forbidden";
   message: string;
@@ -11,24 +16,18 @@ export interface BoundaryReport {
   violations: BoundaryViolation[];
 }
 
-export function validateBoundaries(
-  domains: DomainData[],
-  config: DomainConfig,
-  filterDomain?: string,
-): BoundaryReport {
+export function validateBoundaries(domains: DomainData[], config: DomainConfig, filterDomain?: string): BoundaryReport {
   const violations: BoundaryViolation[] = [];
   const relationships = config.relationships ?? [];
   const domainNames = new Set(domains.map((d) => d.name));
   const domainByName = new Map(domains.map((d) => [d.name, d]));
 
   // Check 1: Observed undeclared — for each domain, check that all cross-domain
-  // includes have a relationship declared (in either direction).
+  // includes or event-variable references have a relationship declared (in either direction).
   for (const domain of domains) {
-    for (const [targetDomain] of domain.includesFrom) {
+    for (const targetDomain of outgoingCoupledDomains(domain)) {
       const covered = relationships.some(
-        (r) =>
-          (r.from === targetDomain && r.to === domain.name) ||
-          (r.from === domain.name && r.to === targetDomain),
+        (r) => (r.from === targetDomain && r.to === domain.name) || (r.from === domain.name && r.to === targetDomain),
       );
       if (!covered) {
         const violation: BoundaryViolation = {
@@ -47,9 +46,7 @@ export function validateBoundaries(
     const fromExists = domainNames.has(rel.from);
     const toExists = domainNames.has(rel.to);
     if (!fromExists || !toExists) {
-      const unknowns = [!fromExists ? rel.from : null, !toExists ? rel.to : null]
-        .filter(Boolean)
-        .join(", ");
+      const unknowns = [!fromExists ? rel.from : null, !toExists ? rel.to : null].filter(Boolean).join(", ");
       violations.push({
         type: "stale",
         message: `Relationship (${rel.from} → ${rel.to}) references unknown domain(s): ${unknowns}`,
@@ -62,7 +59,7 @@ export function validateBoundaries(
   // Check 3: Forbidden — supporting/generic domains that depend on core domains.
   for (const domain of domains) {
     if (domain.strategy !== "supporting" && domain.strategy !== "generic") continue;
-    for (const [targetDomain] of domain.includesFrom) {
+    for (const targetDomain of outgoingCoupledDomains(domain)) {
       const target = domainByName.get(targetDomain);
       if (target?.strategy === "core") {
         violations.push({
@@ -90,10 +87,7 @@ export function formatBoundaryReport(report: BoundaryReport): string {
     return "No boundary violations found.";
   }
 
-  const lines: string[] = [
-    `${report.violations.length} boundary violation(s) found:`,
-    "",
-  ];
+  const lines: string[] = [`${report.violations.length} boundary violation(s) found:`, ""];
 
   for (const v of report.violations) {
     lines.push(`[${v.type}] ${v.message}`);
