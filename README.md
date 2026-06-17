@@ -97,7 +97,15 @@ Run any subcommand with `--help` for full usage.
 | `validate-editor` | Report event sheets the C3 editor would reject (editor-strictness validation) |
 | `server` | Start the MCP server (stdio transport) |
 
-All subcommands read `domain-config.json` from the current working directory.
+All subcommands share three global options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--project-dir <path>` | auto-detected | C3 project source root (`eventSheets/`, `layouts/`, `scripts/`). Auto-detected from a `project.c3proj` marker in the current dir or an immediate child; also honoured via the `C3_PROJECT_DIR` env var. Relative paths resolve from the current directory. |
+| `--config <path>` | `<project-root>/domain-config.json` | Path to `domain-config.json`. Relative paths resolve from the project root. |
+| `--extracted <path>` | `<project-root>/extracted` | Output directory for the generated domain index. Pass `none` for an ephemeral temp dir auto-cleaned on exit. |
+
+See [docs/domain-architecture.md](docs/domain-architecture.md#paths-and-locations) for the full `--project-dir` resolution precedence (flag > `C3_PROJECT_DIR` > `project.c3proj` discovery > cwd).
 
 ## MCP server
 

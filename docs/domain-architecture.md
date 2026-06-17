@@ -147,18 +147,28 @@ Commit `extracted/domain-index/` to version control so the index is always avail
 
 ## Paths and locations
 
-By default the tool reads `domain-config.json` from the target project root (your current working directory) and writes generated output to `extracted/` there. Both can be overridden:
+By default the tool scans `eventSheets/`, `layouts/`, and `scripts/` under the auto-detected C3 project root, reads `domain-config.json` from that root, and writes generated output to `extracted/` there. All three locations can be overridden:
 
 | Flag | Default | Effect |
 |------|---------|--------|
+| `--project-dir <path>` | auto-detected (see below) | Sets the C3 project source root — the directory whose `eventSheets/`, `layouts/`, and `scripts/` are scanned. Relative paths resolve against the **current working directory**; absolute paths are used as-is. |
 | `--config <path>` | `<project-root>/domain-config.json` | Selects the domain-config file. |
 | `--extracted <path>` | `<project-root>/extracted` | Selects the domain-index output directory. |
 
-Relative paths for both flags resolve against the **target project root** (the process working directory), never the package install directory. Absolute paths are used as-is. Operator-supplied paths are trusted — paths outside the project root are intentionally allowed.
+Relative paths for `--config` and `--extracted` resolve against the **project root** (as set by `--project-dir` or auto-detection), never the package install directory. Absolute paths are used as-is. Operator-supplied paths are trusted — paths outside the project root are intentionally allowed.
+
+**`--project-dir` resolution precedence** (highest to lowest):
+
+1. **`--project-dir <path>`** — explicit flag. Relative resolves against the current working directory; absolute used as-is. No containment restriction — `../sibling` is valid.
+2. **`C3_PROJECT_DIR` environment variable** — same resolution rules as the flag.
+3. **Discovery** — the current directory and its immediate children (depth 1) are searched for a directory or file named `project.c3proj` (the Construct 3 project manifest). Exactly one match becomes the project root. Two or more matches produce an ambiguity error: the command prints it and exits non-zero, requiring the user to pass `--project-dir` explicitly. This is the intended behavior for a repository hosting multiple C3 projects.
+4. **Fallback** — the current working directory (preserves prior behavior when no project marker is found).
+
+This resolution is implemented by `resolveProjectRoot` in `src/adapters/locations.ts`, a thin wrapper over `@genvid/mcp-utils`'s `resolveRootFolder` that passes `PROJECT_MANIFEST_FILE` (from `@genvid/c3source`) as the discovery marker.
 
 **Ephemeral mode** — pass `none` as the `--extracted` value to route output into a temporary directory that is automatically deleted when the command finishes (or when the MCP server shuts down on SIGINT/SIGTERM). This is useful as a no-side-effect validation pass: generation runs but leaves no files behind in the project tree.
 
-When using the MCP server, the resolved locations are forwarded from the CLI `server` command via `startServer(loc: ResolvedLocations)`. There are no environment variables.
+When using the MCP server, the resolved locations are forwarded from the CLI `server` command via `startServer(loc: ResolvedLocations)`. The MCP server itself does not re-run discovery — the root is fixed at startup.
 
 ## Cross-domain coupling sources
 
