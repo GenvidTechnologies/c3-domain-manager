@@ -164,7 +164,7 @@ Relative paths for `--config` and `--extracted` resolve against the **project ro
 3. **Discovery** — the current directory and its immediate children (depth 1) are searched for a directory or file named `project.c3proj` (the Construct 3 project manifest). Exactly one match becomes the project root. Two or more matches produce an ambiguity error: the command prints it and exits non-zero, requiring the user to pass `--project-dir` explicitly. This is the intended behavior for a repository hosting multiple C3 projects.
 4. **Fallback** — the current working directory (preserves prior behavior when no project marker is found).
 
-This resolution is implemented by `resolveProjectRoot` in `src/adapters/locations.ts`, a thin wrapper over `@genvid/mcp-utils`'s `resolveRootFolder` that passes `PROJECT_MANIFEST_FILE` (from `@genvid/c3source`) as the discovery marker.
+This resolution is implemented by `resolveProjectRoot` in `src/adapters/locations.ts`, a thin wrapper over `@genvid/mcp-utils`'s `resolveRootFolder` that passes `PROJECT_MANIFEST_FILE` (from `@genvidtech/c3source`) as the discovery marker.
 
 **Ephemeral mode** — pass `none` as the `--extracted` value to route output into a temporary directory that is automatically deleted when the command finishes (or when the MCP server shuts down on SIGINT/SIGTERM). This is useful as a no-side-effect validation pass: generation runs but leaves no files behind in the project tree.
 
@@ -228,7 +228,7 @@ Each domain can define a `glossary` map of terms to definitions. `glossary-check
 
 ## Editor-strictness validation
 
-`validate-editor` (CLI subcommand or MCP `READ_ONLY` tool "Validate Editor Strictness") checks whether the target project's event sheets are structurally valid from the C3 editor's perspective. It re-walks `eventSheets/` fresh from disk, attributes each sheet to a domain via `classifyFile`, and runs `@genvid/c3source`'s `validateForEditor` per sheet. Issues are grouped by sheet; sheets that match no domain classification are reported under `"(unclassified)"`.
+`validate-editor` (CLI subcommand or MCP `READ_ONLY` tool "Validate Editor Strictness") checks whether the target project's event sheets are structurally valid from the C3 editor's perspective. It re-walks `eventSheets/` fresh from disk, attributes each sheet to a domain via `classifyFile`, and runs `@genvidtech/c3source`'s `validateForEditor` per sheet. Issues are grouped by sheet; sheets that match no domain classification are reported under `"(unclassified)"`.
 
 This is a read-side diagnostic only. `c3-domain-manager` never writes or modifies event sheets — the report surfaces sheets the C3 editor would refuse to import (e.g. a `variable` event missing its `comment` field, or a `group` event missing its `description`) so you can fix them in the C3 editor.
 
