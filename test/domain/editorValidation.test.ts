@@ -143,6 +143,23 @@ describe("editorValidation", () => {
       assert.equal(report!.totalIssues, 0);
     });
 
+    it("calls log with a message containing 'eventSheets' when eventSheets/ dir is absent", () => {
+      // No eventSheets/ dir — log spy should capture the skip message
+      const config = makeConfig({
+        Auth: { description: "Auth", eventSheetDirs: ["Login"] },
+      });
+
+      const logMessages: unknown[] = [];
+      const logSpy = (...args: unknown[]) => { logMessages.push(args[0]); };
+
+      validateEditorStrictness(tmpDir, config, logSpy);
+
+      assert.isTrue(
+        logMessages.some((msg) => typeof msg === "string" && msg.includes("eventSheets")),
+        `Expected log to contain 'eventSheets', got: ${JSON.stringify(logMessages)}`,
+      );
+    });
+
     it("only includes sheets with issues, sorted by sheet path", () => {
       // Two sheets: one clean, one with issues
       const cleanSheet = JSON.stringify({

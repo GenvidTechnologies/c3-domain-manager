@@ -5,7 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { computeDomainData, loadConfig, extractEventVarDecls, extractEventVarRefs } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig } from "../../src/domain/types.js";
-import type { EventSheet } from "@genvid/c3source";
+import type { EventSheet } from "@genvidtech/c3source";
 
 /** Create a file (and its parent directories) in the temp dir. */
 function createFile(rootDir: string, relativePath: string, content = ""): void {
@@ -314,6 +314,46 @@ describe("computeDomainData", () => {
 
     assert.equal(domainA.referencesFrom.size, 0, "same-domain ref produces no edge");
     assert.equal(domainA.referencedBy.size, 0, "same-domain ref produces no referencedBy edge");
+  });
+
+  it("does not throw and returns empty eventSheets when eventSheets/ dir is absent", () => {
+    // Delete the eventSheets/ dir that beforeEach created — layouts/ and scripts/ still exist
+    fs.rmSync(path.join(tmpDir, "eventSheets"), { recursive: true, force: true });
+
+    const config: DomainConfig = {
+      domains: {
+        Auth: { description: "Auth", eventSheetDirs: ["Login"] },
+      },
+    };
+
+    let result: ReturnType<typeof computeDomainData> | undefined;
+    assert.doesNotThrow(() => {
+      result = computeDomainData(tmpDir, config);
+    });
+    assert.isDefined(result);
+    for (const domain of result!.domains) {
+      assert.equal(domain.eventSheets.length, 0, `${domain.name} should have no eventSheets`);
+    }
+  });
+
+  it("does not throw and returns empty layouts when layouts/ dir is absent", () => {
+    // Delete the layouts/ dir that beforeEach created — eventSheets/ and scripts/ still exist
+    fs.rmSync(path.join(tmpDir, "layouts"), { recursive: true, force: true });
+
+    const config: DomainConfig = {
+      domains: {
+        Auth: { description: "Auth", layoutDirs: ["MainMenu"] },
+      },
+    };
+
+    let result: ReturnType<typeof computeDomainData> | undefined;
+    assert.doesNotThrow(() => {
+      result = computeDomainData(tmpDir, config);
+    });
+    assert.isDefined(result);
+    for (const domain of result!.domains) {
+      assert.equal(domain.layouts.length, 0, `${domain.name} should have no layouts`);
+    }
   });
 
   it("duplicate references across sheets are deduped in the edge payload", () => {

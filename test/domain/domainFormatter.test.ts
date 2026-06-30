@@ -2,8 +2,8 @@ import { describe, it } from "mocha";
 import { assert } from "chai";
 import { classifyFile } from "../../src/domain/classification.js";
 import { extractFunctionDefs } from "../../src/domain/domainGenerator.js";
-import { extractIncludes } from "@genvid/c3source";
-import type { EventSheet, EventSheetEvent } from "@genvid/c3source";
+import { extractIncludes } from "@genvidtech/c3source";
+import type { EventSheet, EventSheetEvent } from "@genvidtech/c3source";
 import { formatDomainIndex, formatDomainPage } from "../../src/domain/formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "../../src/domain/types.js";
 

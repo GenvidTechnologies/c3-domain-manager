@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { find_all_eventsheets_path, validateForEditor } from "@genvid/c3source";
-import type { EventSheet, EditorValidationIssue } from "@genvid/c3source";
+import { openProject, validateForEditor } from "@genvidtech/c3source";
+import type { EventSheet, EditorValidationIssue } from "@genvidtech/c3source";
 import type { Logger } from "@genvid/mcp-utils";
 import { classifyFile } from "./classification.js";
 import type { DomainConfig } from "./types.js";
@@ -26,15 +26,12 @@ export function validateEditorStrictness(
   config: DomainConfig,
   log: Logger = () => {},
 ): EditorStrictnessReport {
-  const eventSheetsDir = path.join(rootDir, "eventSheets");
-
-  let sheetPaths: string[];
-  try {
-    sheetPaths = find_all_eventsheets_path(eventSheetsDir);
-  } catch {
-    log(`editorValidation: eventSheets/ dir not found at ${eventSheetsDir}, skipping.`);
+  const project = openProject(rootDir);
+  if (!project.hasEventSheets()) {
+    log(`editorValidation: eventSheets/ dir not found at ${project.eventSheetsDir}, skipping.`);
     return { sheets: [], totalIssues: 0 };
   }
+  const sheetPaths = project.findAllEventSheets();
 
   const results: EditorStrictnessSheetReport[] = [];
 

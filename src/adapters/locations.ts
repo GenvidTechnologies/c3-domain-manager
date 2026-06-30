@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { resolveRootFolder, type ResolvedRoot } from "@genvid/mcp-utils";
-import { PROJECT_MANIFEST_FILE } from "@genvid/c3source";
+import { PROJECT_MANIFEST_FILE } from "@genvidtech/c3source";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export const NO_EXTRACTED = "none";

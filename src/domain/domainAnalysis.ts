@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { openProject } from "@genvidtech/c3source";
 import { classifyFile } from "./classification.js";
 import type { DomainConfig } from "./types.js";
 
@@ -40,9 +41,10 @@ function collectRootTsFiles(dir: string, baseDir: string): string[] {
  */
 export function listUncategorized(rootDir: string, config: DomainConfig): string[] {
   const uncategorized: string[] = [];
+  const project = openProject(rootDir);
 
   // EventSheets
-  const eventSheetFiles = collectFiles(path.join(rootDir, "eventSheets"), rootDir);
+  const eventSheetFiles = collectFiles(project.eventSheetsDir, rootDir);
   for (const file of eventSheetFiles) {
     if (classifyFile(file, "eventSheet", config) === null) {
       uncategorized.push(file);
@@ -50,7 +52,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Layouts
-  const layoutFiles = collectFiles(path.join(rootDir, "layouts"), rootDir);
+  const layoutFiles = collectFiles(project.layoutsDir, rootDir);
   for (const file of layoutFiles) {
     if (classifyFile(file, "layout", config) === null) {
       uncategorized.push(file);
@@ -60,7 +62,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   // Scripts: walk shared/, c3-runtime/, common/, ts-defs/ + root-level .ts files
   const scriptSubdirs = ["shared", "c3-runtime", "common", "ts-defs"];
   for (const subdir of scriptSubdirs) {
-    const files = collectFiles(path.join(rootDir, "scripts", subdir), rootDir);
+    const files = collectFiles(path.join(project.scriptsDir, subdir), rootDir);
     for (const file of files) {
       if (classifyFile(file, "script", config) === null) {
         uncategorized.push(file);
@@ -69,7 +71,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Root-level .ts files in scripts/
-  const rootTsFiles = collectRootTsFiles(path.join(rootDir, "scripts"), rootDir);
+  const rootTsFiles = collectRootTsFiles(project.scriptsDir, rootDir);
   for (const file of rootTsFiles) {
     if (classifyFile(file, "script", config) === null) {
       uncategorized.push(file);

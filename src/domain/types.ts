@@ -1,6 +1,6 @@
-// FunctionParameter is owned by @genvid/c3source (identical shape); re-exported
+// FunctionParameter is owned by @genvidtech/c3source (identical shape); re-exported
 // here so consumers of this package keep importing it from one place.
-export type { FunctionParameter } from "@genvid/c3source";
+export type { FunctionParameter } from "@genvidtech/c3source";
 
 import { z } from "zod";
 

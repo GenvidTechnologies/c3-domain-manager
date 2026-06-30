@@ -1,16 +1,15 @@
 import * as fs from "node:fs";
 import path from "node:path";
 import {
-  find_all_eventsheets_path,
-  find_all_layouts_path,
+  openProject,
   extractFunctions,
   extractIncludes,
   visitEvents,
   hasConditions,
   hasActions,
   getEventVarReferenceName,
-} from "@genvid/c3source";
-import type { EventSheet, EventSheetEvent, Layout, FunctionParameter } from "@genvid/c3source";
+} from "@genvidtech/c3source";
+import type { EventSheet, EventSheetEvent, Layout, FunctionParameter } from "@genvidtech/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
@@ -87,8 +86,7 @@ export async function loadConfig(projectRoot: string, fileName: string): Promise
 /** Directories that are structural layers, not domain-relevant. Recurse into them. */
 const LAYER_DIRS = ["shared", "c3-runtime"];
 
-export function findScriptEntries(rootDir: string): Array<{ relativePath: string; isDirectory: boolean }> {
-  const scriptsDir = path.join(rootDir, "scripts");
+export function findScriptEntries(scriptsDir: string): Array<{ relativePath: string; isDirectory: boolean }> {
   const entries: Array<{ relativePath: string; isDirectory: boolean }> = [];
 
   function scanDir(dir: string, prefix: string) {
@@ -125,9 +123,10 @@ export function computeDomainData(
   log: Logger = () => {},
 ): ComputeDomainDataResult {
   // Find all files
-  const eventSheetPaths = find_all_eventsheets_path(path.join(rootDir, "eventSheets"));
-  const layoutPaths = find_all_layouts_path(path.join(rootDir, "layouts"));
-  const scriptEntries = findScriptEntries(rootDir);
+  const project = openProject(rootDir);
+  const eventSheetPaths = project.findAllEventSheets();
+  const layoutPaths = project.findAllLayouts();
+  const scriptEntries = findScriptEntries(project.scriptsDir);
 
   log(
     `Found ${eventSheetPaths.length} eventSheets, ${layoutPaths.length} layouts, ${scriptEntries.length} script entries.`,
