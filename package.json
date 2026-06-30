@@ -1,6 +1,6 @@
 {
 	"name": "@genvid/c3-domain-manager",
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"description": "Analyzes Construct 3 projects through a domain-driven-design lens: classifies eventSheets/layouts/scripts into named domains and produces a domain index, health/coupling metrics, boundary validation, glossary checks, and a context map. Exposed as both a CLI and an MCP server.",
 	"license": "MIT-0",
 	"author": "Genvid Technologies, inc. <support@genvidtech.com>",
