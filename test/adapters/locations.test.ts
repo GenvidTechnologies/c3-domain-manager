@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { resolveLocations, resolveProjectRoot, NO_EXTRACTED } from "../../src/adapters/locations.js";
-import { ExpectedChanges, isMcpError } from "@genvid/mcp-utils";
+import { ExpectedChanges, isMcpError } from "@genvidtech/mcp-utils";
 
 // Use a deterministic project root that is always absolute and works cross-platform.
 const root = path.resolve(os.tmpdir(), "c3dm-test-proj");

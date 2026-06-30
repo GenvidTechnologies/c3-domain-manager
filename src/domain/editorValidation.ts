@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { openProject, validateForEditor } from "@genvidtech/c3source";
 import type { EventSheet, EditorValidationIssue } from "@genvidtech/c3source";
-import type { Logger } from "@genvid/mcp-utils";
+import type { Logger } from "@genvidtech/mcp-utils";
 import { classifyFile } from "./classification.js";
 import type { DomainConfig } from "./types.js";
 

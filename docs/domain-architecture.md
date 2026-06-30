@@ -164,7 +164,7 @@ Relative paths for `--config` and `--extracted` resolve against the **project ro
 3. **Discovery** — the current directory and its immediate children (depth 1) are searched for a directory or file named `project.c3proj` (the Construct 3 project manifest). Exactly one match becomes the project root. Two or more matches produce an ambiguity error: the command prints it and exits non-zero, requiring the user to pass `--project-dir` explicitly. This is the intended behavior for a repository hosting multiple C3 projects.
 4. **Fallback** — the current working directory (preserves prior behavior when no project marker is found).
 
-This resolution is implemented by `resolveProjectRoot` in `src/adapters/locations.ts`, a thin wrapper over `@genvid/mcp-utils`'s `resolveRootFolder` that passes `PROJECT_MANIFEST_FILE` (from `@genvidtech/c3source`) as the discovery marker.
+This resolution is implemented by `resolveProjectRoot` in `src/adapters/locations.ts`, a thin wrapper over `@genvidtech/mcp-utils`'s `resolveRootFolder` that passes `PROJECT_MANIFEST_FILE` (from `@genvidtech/c3source`) as the discovery marker.
 
 **Ephemeral mode** — pass `none` as the `--extracted` value to route output into a temporary directory that is automatically deleted when the command finishes (or when the MCP server shuts down on SIGINT/SIGTERM). This is useful as a no-side-effect validation pass: generation runs but leaves no files behind in the project tree.
 

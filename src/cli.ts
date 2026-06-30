@@ -9,7 +9,7 @@ import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides } from "./domain/domainAnalysis.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
 import { resolveLocations, resolveProjectRoot } from "./adapters/locations.js";
-import { isMcpError } from "@genvid/mcp-utils";
+import { isMcpError } from "@genvidtech/mcp-utils";
 
 function resolveRootOrExit(projectDir: string | undefined): string {
   const rooted = resolveProjectRoot({ projectDir });

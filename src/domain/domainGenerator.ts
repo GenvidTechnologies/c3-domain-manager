@@ -14,8 +14,8 @@ import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 import { DomainConfigSchema } from "./types.js";
-import { loadProjectConfig, isMcpError } from "@genvid/mcp-utils";
-import type { Logger } from "@genvid/mcp-utils";
+import { loadProjectConfig, isMcpError } from "@genvidtech/mcp-utils";
+import type { Logger } from "@genvidtech/mcp-utils";
 
 /** Format function parameters as "name: type, name2: type2". */
 function formatParams(params: FunctionParameter[]): string {
