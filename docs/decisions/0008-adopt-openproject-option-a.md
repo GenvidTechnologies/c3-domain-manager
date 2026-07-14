@@ -64,8 +64,11 @@ the handle's walkers, and offers almost no improvement over the status quo.
 - **Scope limit — `findScriptEntries` is not replaced:** `project.findAllScripts()`
   returns a flat list of `.ts` paths without the `{relativePath, isDirectory}`
   directory entries and `LAYER_DIRS` recursion that classification depends on.
-  Only its input narrows to `project.scriptsDir`; it still throws on a missing
-  `scripts/` dir (unchanged).
+  Only its input narrows to `project.scriptsDir`. At the time of this ADR it
+  still threw on a missing `scripts/` dir (unchanged) — a residual inconsistency
+  with the `eventSheets/`/`layouts/` tolerance above, later resolved in #23 by
+  guarding `findScriptEntries` with an `fs.existsSync` check so a missing
+  `scripts/` root returns `[]` too.
 - `findScriptEntries`'s narrowed signature (`rootDir` → `scriptsDir`) is a
   public-API change with no known external consumers; noted for release notes.
 - **Deferred — `comparisonSymbol`/`COMPARISON_OPERATORS` (also new in 1.7.0):**
