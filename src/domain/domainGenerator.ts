@@ -89,6 +89,11 @@ const LAYER_DIRS = ["shared", "c3-runtime"];
 export function findScriptEntries(scriptsDir: string): Array<{ relativePath: string; isDirectory: boolean }> {
   const entries: Array<{ relativePath: string; isDirectory: boolean }> = [];
 
+  // A missing scripts/ dir is legitimate (a C3 project may have no scripts) —
+  // treat it as empty rather than throwing, matching how c3source's
+  // findAllEventSheets/findAllLayouts tolerate absent section dirs (ADR 0008).
+  if (!fs.existsSync(scriptsDir)) return entries;
+
   function scanDir(dir: string, prefix: string) {
     const names = fs.readdirSync(dir).sort();
     for (const name of names) {

@@ -356,6 +356,26 @@ describe("computeDomainData", () => {
     }
   });
 
+  it("does not throw and returns empty scripts when scripts/ dir is absent", () => {
+    // Delete the scripts/ dir that beforeEach created — eventSheets/ and layouts/ still exist
+    fs.rmSync(path.join(tmpDir, "scripts"), { recursive: true, force: true });
+
+    const config: DomainConfig = {
+      domains: {
+        Auth: { description: "Auth", scriptDirs: ["Login"] },
+      },
+    };
+
+    let result: ReturnType<typeof computeDomainData> | undefined;
+    assert.doesNotThrow(() => {
+      result = computeDomainData(tmpDir, config);
+    });
+    assert.isDefined(result);
+    for (const domain of result!.domains) {
+      assert.equal(domain.scripts.length, 0, `${domain.name} should have no scripts`);
+    }
+  });
+
   it("duplicate references across sheets are deduped in the edge payload", () => {
     // Domain A has two sheets both referencing "score"; domain B declares it — payload is ["score"] (length 1)
     createFile(
