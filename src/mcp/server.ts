@@ -14,6 +14,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { collectGlossary, findCollisions, formatGlossaryReport } from "../domain/glossary.js";
 import { validateBoundaries, formatBoundaryReport } from "../domain/relationships.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "../domain/editorValidation.js";
+import { computeAddonInventory, formatAddonInventoryReport } from "../domain/addonInventory.js";
 import { computeHealth, formatHealthReport } from "../domain/health.js";
 import { generateContextMap } from "../domain/contextMap.js";
 import {
@@ -485,6 +486,29 @@ server.registerTool(
         return { content: [{ type: "text", text: formatEditorStrictnessReport(report) }] };
       } catch (e) {
         return notFound("validate-editor", `Error: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    })
+);
+
+server.registerTool(
+  "addon-inventory",
+  {
+    title: "Addon Inventory",
+    description:
+      "Report project-wide addon usage by cross-referencing the manifest's declared usedAddons against the addons each object type and family actually draws on. Flags declared-but-unused addons (a manifest entry nothing uses — a dead dependency) and used-but-undeclared addons (drawn on but absent from usedAddons — manifest drift). Derives attribution fresh from disk, so its result is independent of domain-index staleness.",
+    annotations: READ_ONLY,
+    inputSchema: {},
+  },
+  async () =>
+    rwlock.read(async () => {
+      try {
+        const report = computeAddonInventory(PROJECT_ROOT);
+        // No appendStaleWarning: this diagnostic derives attribution fresh from
+        // disk and never reads the cached domain index, so the index-staleness
+        // warning would mislead (same reasoning as validate-editor).
+        return { content: [{ type: "text", text: formatAddonInventoryReport(report) }] };
+      } catch (e) {
+        return notFound("addon-inventory", `Error: ${e instanceof Error ? e.message : String(e)}`);
       }
     })
 );
