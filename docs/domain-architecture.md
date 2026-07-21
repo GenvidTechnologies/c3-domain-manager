@@ -234,9 +234,22 @@ This is a read-side diagnostic only. `c3-domain-manager` never writes or modifie
 
 Because it reads sheets directly from disk, the MCP tool does not append the stale-index warning that other read tools emit — index freshness is irrelevant to its output.
 
+## Addon inventory
+
+`addon-inventory` (CLI subcommand or MCP `READ_ONLY` tool "Addon Inventory") cross-references the project manifest's declared `usedAddons` against the addons every object type and family actually draws on. It reports two kinds of drift plus the raw attribution listing:
+
+- **Declared but unused** — an addon listed in the manifest that nothing in the project draws on (a dead dependency)
+- **Used but undeclared** — an addon an object type, behavior, or effect draws on that is missing from the manifest's `usedAddons` (manifest drift)
+- **Attributions** — every object type/family and the plugin/behavior/effect ids it draws on
+
+Like `validate-editor`, this is a read-side diagnostic only: it derives attribution fresh from disk via `@genvidtech/c3source`'s `collectAddonAttribution`, independent of `domain-config.json` and the cached domain index (the MCP tool likewise omits the stale-index warning).
+
+Unlike every other diagnostic in this tool, `addon-inventory` requires a valid project manifest: it calls `project.manifest()`, which throws if `project.c3proj` is missing or malformed, rather than degrading gracefully — an addon inventory has nothing meaningful to report without a manifest to cross-reference against. See `docs/decisions/0009-addon-inventory-project-wide-diagnostic.md`.
+
 ## Maintenance
 
 - After adding or renaming files, run `c3-domain-manager list-uncategorized` to confirm coverage
 - After deleting files, run `c3-domain-manager list-stale-overrides` to clean up orphaned override entries
 - Regenerate the domain index after any `domain-config.json` change: `c3-domain-manager generate`
 - To check event sheets for C3 editor compatibility: `c3-domain-manager validate-editor`
+- To check for dead or undeclared addon dependencies: `c3-domain-manager addon-inventory`
