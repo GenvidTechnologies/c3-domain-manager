@@ -8,6 +8,7 @@ import { hideBin } from "yargs/helpers";
 import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides } from "./domain/domainAnalysis.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
+import { computeAddonInventory, formatAddonInventoryReport } from "./domain/addonInventory.js";
 import { resolveLocations, resolveProjectRoot } from "./adapters/locations.js";
 import { isMcpError } from "@genvidtech/mcp-utils";
 
@@ -101,6 +102,16 @@ yargs(hideBin(process.argv))
       const config = await loadConfig(loc.configDir, loc.configFileName);
       const report = validateEditorStrictness(loc.projectRoot, config);
       console.log(formatEditorStrictnessReport(report));
+    },
+  )
+  .command(
+    "addon-inventory",
+    "Report addon usage: declared-but-unused and used-but-undeclared addons (manifest cross-reference)",
+    () => {},
+    async (argv) => {
+      const projectRoot = resolveRootOrExit(argv["project-dir"] as string | undefined);
+      const report = computeAddonInventory(projectRoot, console.log);
+      console.log(formatAddonInventoryReport(report));
     },
   )
   .option("project-dir", {
