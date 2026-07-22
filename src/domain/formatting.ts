@@ -1,3 +1,4 @@
+import { FILE_TYPES } from "./classification.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 
 // --- Formatting ---
@@ -357,14 +358,11 @@ function formatDomainsSection(config: DomainConfig): string {
     if (def.strategy) {
       lines.push(`  Strategy: ${def.strategy}`);
     }
-    if (def.eventSheetDirs && def.eventSheetDirs.length > 0) {
-      lines.push(`  eventSheetDirs: ${def.eventSheetDirs.join(", ")}`);
-    }
-    if (def.layoutDirs && def.layoutDirs.length > 0) {
-      lines.push(`  layoutDirs: ${def.layoutDirs.join(", ")}`);
-    }
-    if (def.scriptDirs && def.scriptDirs.length > 0) {
-      lines.push(`  scriptDirs: ${def.scriptDirs.join(", ")}`);
+    for (const { dirKey } of Object.values(FILE_TYPES)) {
+      const dirs = def[dirKey];
+      if (dirs && dirs.length > 0) {
+        lines.push(`  ${dirKey}: ${dirs.join(", ")}`);
+      }
     }
   }
 
@@ -382,14 +380,11 @@ function formatSharedSubdomainsSection(config: DomainConfig): string {
     lines.push("");
     lines.push(name);
     lines.push(`  Description: ${def.description}`);
-    if (def.eventSheetDirs && def.eventSheetDirs.length > 0) {
-      lines.push(`  eventSheetDirs: ${def.eventSheetDirs.join(", ")}`);
-    }
-    if (def.layoutDirs && def.layoutDirs.length > 0) {
-      lines.push(`  layoutDirs: ${def.layoutDirs.join(", ")}`);
-    }
-    if (def.scriptDirs && def.scriptDirs.length > 0) {
-      lines.push(`  scriptDirs: ${def.scriptDirs.join(", ")}`);
+    for (const { dirKey } of Object.values(FILE_TYPES)) {
+      const dirs = def[dirKey];
+      if (dirs && dirs.length > 0) {
+        lines.push(`  ${dirKey}: ${dirs.join(", ")}`);
+      }
     }
   }
 
