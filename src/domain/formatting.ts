@@ -211,6 +211,9 @@ export function formatDomainPage(domain: DomainData): string {
   // Scripts section
   formatScriptsSection(domain, lines);
 
+  // Addons section
+  formatAddonsSection(domain, lines);
+
   // Cross-Domain Dependencies
   formatCrossDomainSection(domain, lines);
 
@@ -321,6 +324,40 @@ function formatScriptsSection(domain: DomainData, lines: string[]): void {
     }
     lines.push("");
   }
+}
+
+/**
+ * Format the domain's addon usage (per-domain addon attribution, issue #26).
+ * Unlike formatScriptsSection, this section is omitted entirely (no heading)
+ * when the domain draws on no addons.
+ */
+function formatAddonsSection(domain: DomainData, lines: string[]): void {
+  if (domain.addons.length === 0) return;
+
+  lines.push("## Addons");
+  lines.push("");
+
+  // Dedup + sort every id across all attributions (mirrors addonInventory.ts's usedIdSet).
+  const usedIdSet = new Set<string>();
+  for (const attribution of domain.addons) {
+    usedIdSet.add(attribution.pluginId);
+    for (const behaviorId of attribution.behaviorIds) {
+      usedIdSet.add(behaviorId);
+    }
+    for (const effectId of attribution.effectIds) {
+      usedIdSet.add(effectId);
+    }
+  }
+  const usedIds = [...usedIdSet].sort();
+  lines.push(`Addons used: ${usedIds.join(", ")}`);
+  lines.push("");
+
+  const sortedAttributions = [...domain.addons].sort((a, b) => a.name.localeCompare(b.name));
+  for (const attribution of sortedAttributions) {
+    const drawnOn = [attribution.pluginId, ...attribution.behaviorIds, ...attribution.effectIds];
+    lines.push(`- ${attribution.name} (${attribution.source}) → ${drawnOn.join(", ")}`);
+  }
+  lines.push("");
 }
 
 // --- DomainConfig Formatting ---

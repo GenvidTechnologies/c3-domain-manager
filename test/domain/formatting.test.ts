@@ -215,6 +215,31 @@ describe("formatting — strategy classification", () => {
     });
   });
 
+  describe("formatDomainPage — addons section", () => {
+    it("omits the ## Addons heading entirely when addons is empty", () => {
+      const domain = makeDomain("NoAddons", { addons: [] });
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "## Addons");
+    });
+
+    it("renders a deduped, sorted summary line plus a provenance line per attribution", () => {
+      const domain = makeDomain("Combat", {
+        addons: [
+          { name: "Hero", source: "objectType", pluginId: "Sprite", behaviorIds: ["Physics"], effectIds: [] },
+          { name: "Enemies", source: "family", pluginId: "Sprite", behaviorIds: [], effectIds: ["Glow"] },
+        ],
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "## Addons");
+      // Deduped + sorted: "Sprite" appears once even though both attributions declare it.
+      assert.include(result, "Addons used: Glow, Physics, Sprite");
+      const summaryOccurrences = result.split("Addons used: Glow, Physics, Sprite").length - 1;
+      assert.strictEqual(summaryOccurrences, 1);
+      assert.include(result, "- Hero (objectType) → Sprite, Physics");
+      assert.include(result, "- Enemies (family) → Sprite, Glow");
+    });
+  });
+
   describe("formatDomainConfig domains section — strategy field", () => {
     it("includes Strategy line when domain has strategy", () => {
       const config: DomainConfig = {
