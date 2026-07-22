@@ -25,3 +25,4 @@ Architecture Decision Records, numbered chronologically by when the decision was
 - `decisions/0006-event-variable-reference-coupling.md` — add event-variable references as a second cross-domain coupling source aggregated under union semantics (issue #14)
 - `decisions/0007-project-dir-resolverootfolder.md` — add `--project-dir` via mcp-utils 0.5.0 `resolveRootFolder` instead of hand-rolling root discovery (issue #16)
 - `decisions/0008-adopt-openproject-option-a.md` — adopt `C3Project`/`openProject` for C3 file discovery in place of hardcoded section-folder joins (Option A: local-open in pure functions; issue #19)
+- `decisions/0009-addon-inventory-project-wide-diagnostic.md` — adopt c3source 1.8.0 addon attribution as a project-wide read-side `addon-inventory` diagnostic; defer per-domain attribution and expression-reference coupling (issue #25)
