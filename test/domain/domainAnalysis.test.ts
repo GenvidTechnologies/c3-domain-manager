@@ -176,6 +176,24 @@ describe("domainAnalysis", () => {
       // Only shared/utils/helper.ts is scanned (and classified). SomeOtherDir is ignored.
       assert.deepEqual(result, []);
     });
+
+    it("returns uncategorized object types and families", () => {
+      createFile(tmpDir, "objectTypes/Battle/Hero.json");
+      createFile(tmpDir, "objectTypes/Orphan/Widget.json");
+      createFile(tmpDir, "families/Battle/Units.json");
+      createFile(tmpDir, "families/Orphan/Loose.json");
+
+      const config = makeConfig({
+        Battle: {
+          description: "Battle",
+          objectTypeDirs: ["Battle"],
+          familyDirs: ["Battle"],
+        },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.deepEqual(result, ["families/Orphan/Loose.json", "objectTypes/Orphan/Widget.json"]);
+    });
   });
 });
 
@@ -203,20 +221,21 @@ describe("collectValidDomainNames", () => {
 });
 
 describe("validateOverrideKeys", () => {
-  it("accepts eventSheets/, layouts/, scripts/ prefixes", () => {
+  it("accepts eventSheets/, layouts/, scripts/, objectTypes/, families/ prefixes", () => {
     const result = validateOverrideKeys([
       "eventSheets/Login/Login.json",
       "layouts/Main/Main.json",
       "scripts/shared/auth/login.ts",
+      "objectTypes/Battle/Hero.json",
+      "families/Battle/Units.json",
     ]);
     assert.deepEqual(result, []);
   });
 
   it("rejects paths without valid prefix", () => {
-    const result = validateOverrideKeys(["foo/bar.json", "objectTypes/Hero.json"]);
-    assert.equal(result.length, 2);
+    const result = validateOverrideKeys(["foo/bar.json"]);
+    assert.equal(result.length, 1);
     assert.include(result[0], "Invalid path prefix: 'foo/bar.json'");
-    assert.include(result[1], "Invalid path prefix: 'objectTypes/Hero.json'");
   });
 
   it("returns empty array for all-valid keys", () => {

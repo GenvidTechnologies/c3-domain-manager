@@ -1,3 +1,4 @@
+import { FILE_TYPES } from "./classification.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 
 // --- Formatting ---
@@ -210,6 +211,9 @@ export function formatDomainPage(domain: DomainData): string {
   // Scripts section
   formatScriptsSection(domain, lines);
 
+  // Addons section
+  formatAddonsSection(domain, lines);
+
   // Cross-Domain Dependencies
   formatCrossDomainSection(domain, lines);
 
@@ -322,6 +326,40 @@ function formatScriptsSection(domain: DomainData, lines: string[]): void {
   }
 }
 
+/**
+ * Format the domain's addon usage (per-domain addon attribution, issue #26).
+ * Unlike formatScriptsSection, this section is omitted entirely (no heading)
+ * when the domain draws on no addons.
+ */
+function formatAddonsSection(domain: DomainData, lines: string[]): void {
+  if (domain.addons.length === 0) return;
+
+  lines.push("## Addons");
+  lines.push("");
+
+  // Dedup + sort every id across all attributions (mirrors addonInventory.ts's usedIdSet).
+  const usedIdSet = new Set<string>();
+  for (const attribution of domain.addons) {
+    usedIdSet.add(attribution.pluginId);
+    for (const behaviorId of attribution.behaviorIds) {
+      usedIdSet.add(behaviorId);
+    }
+    for (const effectId of attribution.effectIds) {
+      usedIdSet.add(effectId);
+    }
+  }
+  const usedIds = [...usedIdSet].sort();
+  lines.push(`Addons used: ${usedIds.join(", ")}`);
+  lines.push("");
+
+  const sortedAttributions = [...domain.addons].sort((a, b) => a.name.localeCompare(b.name));
+  for (const attribution of sortedAttributions) {
+    const drawnOn = [attribution.pluginId, ...attribution.behaviorIds, ...attribution.effectIds];
+    lines.push(`- ${attribution.name} (${attribution.source}) → ${drawnOn.join(", ")}`);
+  }
+  lines.push("");
+}
+
 // --- DomainConfig Formatting ---
 
 export type DomainConfigSection = "domains" | "sharedSubdomains" | "overrides" | "all";
@@ -357,14 +395,11 @@ function formatDomainsSection(config: DomainConfig): string {
     if (def.strategy) {
       lines.push(`  Strategy: ${def.strategy}`);
     }
-    if (def.eventSheetDirs && def.eventSheetDirs.length > 0) {
-      lines.push(`  eventSheetDirs: ${def.eventSheetDirs.join(", ")}`);
-    }
-    if (def.layoutDirs && def.layoutDirs.length > 0) {
-      lines.push(`  layoutDirs: ${def.layoutDirs.join(", ")}`);
-    }
-    if (def.scriptDirs && def.scriptDirs.length > 0) {
-      lines.push(`  scriptDirs: ${def.scriptDirs.join(", ")}`);
+    for (const { dirKey } of Object.values(FILE_TYPES)) {
+      const dirs = def[dirKey];
+      if (dirs && dirs.length > 0) {
+        lines.push(`  ${dirKey}: ${dirs.join(", ")}`);
+      }
     }
   }
 
@@ -382,14 +417,11 @@ function formatSharedSubdomainsSection(config: DomainConfig): string {
     lines.push("");
     lines.push(name);
     lines.push(`  Description: ${def.description}`);
-    if (def.eventSheetDirs && def.eventSheetDirs.length > 0) {
-      lines.push(`  eventSheetDirs: ${def.eventSheetDirs.join(", ")}`);
-    }
-    if (def.layoutDirs && def.layoutDirs.length > 0) {
-      lines.push(`  layoutDirs: ${def.layoutDirs.join(", ")}`);
-    }
-    if (def.scriptDirs && def.scriptDirs.length > 0) {
-      lines.push(`  scriptDirs: ${def.scriptDirs.join(", ")}`);
+    for (const { dirKey } of Object.values(FILE_TYPES)) {
+      const dirs = def[dirKey];
+      if (dirs && dirs.length > 0) {
+        lines.push(`  ${dirKey}: ${dirs.join(", ")}`);
+      }
     }
   }
 

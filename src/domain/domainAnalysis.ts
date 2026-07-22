@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { openProject } from "@genvidtech/c3source";
-import { classifyFile } from "./classification.js";
+import { classifyFile, VALID_PREFIXES } from "./classification.js";
 import type { DomainConfig } from "./types.js";
 
 /**
@@ -78,6 +78,22 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
     }
   }
 
+  // Object types
+  const objectTypeFiles = collectFiles(project.objectTypesDir, rootDir);
+  for (const file of objectTypeFiles) {
+    if (classifyFile(file, "objectType", config) === null) {
+      uncategorized.push(file);
+    }
+  }
+
+  // Families
+  const familyFiles = collectFiles(project.familiesDir, rootDir);
+  for (const file of familyFiles) {
+    if (classifyFile(file, "family", config) === null) {
+      uncategorized.push(file);
+    }
+  }
+
   return uncategorized.sort();
 }
 
@@ -112,8 +128,6 @@ export function collectValidDomainNames(config: DomainConfig): Set<string> {
   return names;
 }
 
-const VALID_PREFIXES = ["eventSheets/", "layouts/", "scripts/"];
-
 /**
  * Validate override keys have a recognized path prefix.
  * Returns error strings for invalid keys. Empty array = all valid.
@@ -122,9 +136,7 @@ export function validateOverrideKeys(keys: string[]): string[] {
   const errors: string[] = [];
   for (const key of keys) {
     if (!VALID_PREFIXES.some((prefix) => key.startsWith(prefix))) {
-      errors.push(
-        `Invalid path prefix: '${key}' — must start with eventSheets/, layouts/, or scripts/`,
-      );
+      errors.push(`Invalid path prefix: '${key}' — must start with ${VALID_PREFIXES.join(", ")}`);
     }
   }
   return errors;

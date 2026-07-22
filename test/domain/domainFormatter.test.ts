@@ -35,6 +35,7 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     includedBy: opts?.includedBy ?? new Map(),
     referencesFrom: opts?.referencesFrom ?? new Map(),
     referencedBy: opts?.referencedBy ?? new Map(),
+    addons: opts?.addons ?? [],
   };
 }
 
@@ -133,6 +134,46 @@ describe("domainFormatter", () => {
       });
       const result = classifyFile("scripts/Skills", "script", config);
       assert.equal(result, "Skills");
+    });
+
+    it("classifies object type files using objectTypeDirs with longest-prefix match", () => {
+      const config = makeConfig({
+        Battle: {
+          description: "Battle system",
+          objectTypeDirs: ["Battle"],
+        },
+        Hero: {
+          description: "Hero specifics",
+          objectTypeDirs: ["Battle/Hero"],
+        },
+      });
+      const result = classifyFile("objectTypes/Battle/Hero/Stats.json", "objectType", config);
+      assert.equal(result, "Hero");
+    });
+
+    it("classifies family files using familyDirs", () => {
+      const config = makeConfig({
+        Battle: {
+          description: "Battle system",
+          familyDirs: ["Battle"],
+        },
+      });
+      const result = classifyFile("families/Battle/Units.json", "family", config);
+      assert.equal(result, "Battle");
+    });
+
+    it("classifies object type files via sharedSubdomains objectTypeDirs", () => {
+      const config: DomainConfig = {
+        domains: {},
+        sharedSubdomains: {
+          Shared: {
+            description: "Shared object types",
+            objectTypeDirs: ["Common"],
+          },
+        },
+      };
+      const result = classifyFile("objectTypes/Common/SharedObject.json", "objectType", config);
+      assert.equal(result, "Shared");
     });
   });
 

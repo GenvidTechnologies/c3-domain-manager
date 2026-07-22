@@ -1,18 +1,16 @@
 import type { DomainConfig, DomainDefinition } from "./types.js";
 
-/** File type root directories. */
-const FILE_TYPE_ROOTS: Record<string, string> = {
-  eventSheet: "eventSheets/",
-  layout: "layouts/",
-  script: "scripts/",
-};
+/** File type root directory and dir-array key, keyed by file type. */
+export const FILE_TYPES = {
+  eventSheet: { root: "eventSheets/", dirKey: "eventSheetDirs" },
+  layout: { root: "layouts/", dirKey: "layoutDirs" },
+  script: { root: "scripts/", dirKey: "scriptDirs" },
+  objectType: { root: "objectTypes/", dirKey: "objectTypeDirs" },
+  family: { root: "families/", dirKey: "familyDirs" },
+} as const satisfies Record<string, { root: string; dirKey: keyof DomainDefinition }>;
 
-/** Dir array key per file type. */
-const DIR_KEYS: Record<string, keyof DomainDefinition> = {
-  eventSheet: "eventSheetDirs",
-  layout: "layoutDirs",
-  script: "scriptDirs",
-};
+/** Valid path-prefix roots, derived from FILE_TYPES (insertion order preserved). */
+export const VALID_PREFIXES = Object.values(FILE_TYPES).map((t) => t.root);
 
 /**
  * Classify a file into a domain by checking overrides first, then directory arrays.
@@ -21,7 +19,7 @@ const DIR_KEYS: Record<string, keyof DomainDefinition> = {
  */
 export function classifyFile(
   relativePath: string,
-  fileType: "eventSheet" | "layout" | "script",
+  fileType: "eventSheet" | "layout" | "script" | "objectType" | "family",
   config: DomainConfig,
 ): string | null {
   // 1. Check overrides (exact match, highest priority)
@@ -30,14 +28,14 @@ export function classifyFile(
   }
 
   // 2. Strip the file type root prefix to get the inner path
-  const root = FILE_TYPE_ROOTS[fileType];
+  const root = FILE_TYPES[fileType].root;
   if (!relativePath.startsWith(root)) {
     return null;
   }
   const innerPath = relativePath.slice(root.length); // e.g. "Login/LoginEvents.json"
 
   // 3. Check domain directory arrays — longest prefix wins
-  const dirKey = DIR_KEYS[fileType];
+  const dirKey = FILE_TYPES[fileType].dirKey;
   let bestMatch: string | null = null;
   let bestLength = -1;
 
