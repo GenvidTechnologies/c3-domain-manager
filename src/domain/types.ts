@@ -19,6 +19,8 @@ const DomainDefinitionSchema = z
     eventSheetDirs: z.array(z.string()).optional(),
     layoutDirs: z.array(z.string()).optional(),
     scriptDirs: z.array(z.string()).optional(),
+    objectTypeDirs: z.array(z.string()).optional(),
+    familyDirs: z.array(z.string()).optional(),
     strategy: z.enum(["core", "supporting", "generic"]).optional(),
     glossary: z.record(z.string(), z.string()).optional(),
   })

@@ -514,6 +514,34 @@ describe("loadConfig", () => {
     assert.isDefined(caught, "loadConfig should have thrown");
     assert.include(caught!.message, "domains");
   });
+
+  // R6: objectTypeDirs/familyDirs round-trip unchanged, including passthrough of unknown keys
+  it("R6: retains objectTypeDirs and familyDirs on a domain (passthrough)", async () => {
+    const configObj = {
+      domains: {
+        Battle: {
+          description: "Battle system",
+          objectTypeDirs: ["Battle", "Battle/Hero"],
+          familyDirs: ["Battle"],
+          unknownDomainKey: "kept",
+        },
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "domain-config.json"),
+      JSON.stringify(configObj),
+      "utf-8",
+    );
+
+    const result = await loadConfig(tmpDir, "domain-config.json");
+
+    assert.deepEqual(result.domains["Battle"]!.objectTypeDirs, ["Battle", "Battle/Hero"]);
+    assert.deepEqual(result.domains["Battle"]!.familyDirs, ["Battle"]);
+    assert.equal(
+      (result.domains["Battle"] as Record<string, unknown>)["unknownDomainKey"],
+      "kept",
+    );
+  });
 });
 
 describe("extractEventVarDecls", () => {

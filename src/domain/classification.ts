@@ -5,6 +5,8 @@ export const FILE_TYPES = {
   eventSheet: { root: "eventSheets/", dirKey: "eventSheetDirs" },
   layout: { root: "layouts/", dirKey: "layoutDirs" },
   script: { root: "scripts/", dirKey: "scriptDirs" },
+  objectType: { root: "objectTypes/", dirKey: "objectTypeDirs" },
+  family: { root: "families/", dirKey: "familyDirs" },
 } as const satisfies Record<string, { root: string; dirKey: keyof DomainDefinition }>;
 
 /** Valid path-prefix roots, derived from FILE_TYPES (insertion order preserved). */
@@ -17,7 +19,7 @@ export const VALID_PREFIXES = Object.values(FILE_TYPES).map((t) => t.root);
  */
 export function classifyFile(
   relativePath: string,
-  fileType: "eventSheet" | "layout" | "script",
+  fileType: "eventSheet" | "layout" | "script" | "objectType" | "family",
   config: DomainConfig,
 ): string | null {
   // 1. Check overrides (exact match, highest priority)

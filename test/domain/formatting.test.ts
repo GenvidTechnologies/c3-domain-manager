@@ -239,5 +239,18 @@ describe("formatting — strategy classification", () => {
       const result = formatDomainConfig(config, "domains");
       assert.notInclude(result, "Strategy:");
     });
+
+    it("includes objectTypeDirs line when domain has objectTypeDirs", () => {
+      const config: DomainConfig = {
+        domains: {
+          Battle: {
+            description: "Battle system",
+            objectTypeDirs: ["Battle", "Battle/Hero"],
+          },
+        },
+      };
+      const result = formatDomainConfig(config, "domains");
+      assert.include(result, "objectTypeDirs: Battle, Battle/Hero");
+    });
   });
 });
