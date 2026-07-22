@@ -1,6 +1,9 @@
-// FunctionParameter is owned by @genvidtech/c3source (identical shape); re-exported
-// here so consumers of this package keep importing it from one place.
-export type { FunctionParameter } from "@genvidtech/c3source";
+// FunctionParameter/AddonAttribution are owned by @genvidtech/c3source (identical
+// shape); re-exported here so consumers of this package keep importing them from
+// one place.
+export type { FunctionParameter, AddonAttribution } from "@genvidtech/c3source";
+
+import type { AddonAttribution } from "@genvidtech/c3source";
 
 import { z } from "zod";
 
@@ -64,6 +67,8 @@ export interface DomainData {
   referencesFrom: Map<string, string[]>;
   /** domain → variable names of this domain's that the keyed domain references (event-variable coupling, incoming) */
   referencedBy: Map<string, string[]>;
+  /** Addon attribution for every object type and family classified into this domain. */
+  addons: AddonAttribution[];
   /** True if this domain is a shared subdomain (from config.sharedSubdomains) */
   isSharedSubdomain?: boolean;
   /** Strategic classification from DDD */

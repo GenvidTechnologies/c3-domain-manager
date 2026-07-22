@@ -78,6 +78,22 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
     }
   }
 
+  // Object types
+  const objectTypeFiles = collectFiles(project.objectTypesDir, rootDir);
+  for (const file of objectTypeFiles) {
+    if (classifyFile(file, "objectType", config) === null) {
+      uncategorized.push(file);
+    }
+  }
+
+  // Families
+  const familyFiles = collectFiles(project.familiesDir, rootDir);
+  for (const file of familyFiles) {
+    if (classifyFile(file, "family", config) === null) {
+      uncategorized.push(file);
+    }
+  }
+
   return uncategorized.sort();
 }
 

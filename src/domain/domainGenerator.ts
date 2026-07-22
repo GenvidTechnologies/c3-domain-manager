@@ -8,8 +8,17 @@ import {
   hasConditions,
   hasActions,
   getEventVarReferenceName,
+  attributeObjectType,
+  attributeFamily,
 } from "@genvidtech/c3source";
-import type { EventSheet, EventSheetEvent, Layout, FunctionParameter } from "@genvidtech/c3source";
+import type {
+  EventSheet,
+  EventSheetEvent,
+  Layout,
+  FunctionParameter,
+  ObjectType,
+  Family,
+} from "@genvidtech/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
@@ -154,6 +163,7 @@ export function computeDomainData(
       includedBy: new Map(),
       referencesFrom: new Map(),
       referencedBy: new Map(),
+      addons: [],
       strategy: def.strategy,
     });
   }
@@ -172,6 +182,7 @@ export function computeDomainData(
         includedBy: new Map(),
         referencesFrom: new Map(),
         referencedBy: new Map(),
+        addons: [],
         isSharedSubdomain: true,
         strategy: def.strategy,
       });
@@ -236,6 +247,42 @@ export function computeDomainData(
       existing.push(...refs);
       rawRefs.set(domain, existing);
     }
+  }
+
+  // Classify and attribute object types
+  const objectTypePaths = project.findAllObjectTypes();
+  for (const objectTypePath of objectTypePaths) {
+    const relPath = path.relative(rootDir, objectTypePath).replace(/\\/g, "/");
+    const domain = classifyFile(relPath, "objectType", config);
+
+    if (!domain) {
+      unclassified.push(relPath);
+      log(`  Unclassified: ${relPath}`);
+      continue;
+    }
+
+    const domainData = domainDataMap.get(domain)!;
+    const content = fs.readFileSync(objectTypePath, "utf-8");
+    const objectType: ObjectType = JSON.parse(content);
+    domainData.addons.push(attributeObjectType(objectType));
+  }
+
+  // Classify and attribute families
+  const familyPaths = project.findAllFamilies();
+  for (const familyPath of familyPaths) {
+    const relPath = path.relative(rootDir, familyPath).replace(/\\/g, "/");
+    const domain = classifyFile(relPath, "family", config);
+
+    if (!domain) {
+      unclassified.push(relPath);
+      log(`  Unclassified: ${relPath}`);
+      continue;
+    }
+
+    const domainData = domainDataMap.get(domain)!;
+    const content = fs.readFileSync(familyPath, "utf-8");
+    const family: Family = JSON.parse(content);
+    domainData.addons.push(attributeFamily(family));
   }
 
   // Classify layouts

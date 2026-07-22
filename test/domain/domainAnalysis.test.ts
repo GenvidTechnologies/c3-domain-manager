@@ -176,6 +176,24 @@ describe("domainAnalysis", () => {
       // Only shared/utils/helper.ts is scanned (and classified). SomeOtherDir is ignored.
       assert.deepEqual(result, []);
     });
+
+    it("returns uncategorized object types and families", () => {
+      createFile(tmpDir, "objectTypes/Battle/Hero.json");
+      createFile(tmpDir, "objectTypes/Orphan/Widget.json");
+      createFile(tmpDir, "families/Battle/Units.json");
+      createFile(tmpDir, "families/Orphan/Loose.json");
+
+      const config = makeConfig({
+        Battle: {
+          description: "Battle",
+          objectTypeDirs: ["Battle"],
+          familyDirs: ["Battle"],
+        },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.deepEqual(result, ["families/Orphan/Loose.json", "objectTypes/Orphan/Widget.json"]);
+    });
   });
 });
 

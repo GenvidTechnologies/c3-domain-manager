@@ -24,6 +24,37 @@ function layoutJson(name: string, eventSheet = ""): string {
   return JSON.stringify({ name, layers: [], eventSheet });
 }
 
+/** Create a minimal valid ObjectType JSON file (shape mirrors addonInventory.test.ts). */
+function makeObjectType(name: string, pluginId: string, behaviorIds: string[] = [], effectIds: string[] = []): string {
+  return JSON.stringify({
+    name,
+    "plugin-id": pluginId,
+    sid: 1,
+    instanceVariables: [],
+    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
+    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
+  });
+}
+
+/** Create a minimal valid Family JSON file (shape mirrors addonInventory.test.ts). */
+function makeFamily(
+  name: string,
+  pluginId: string,
+  members: string[],
+  behaviorIds: string[] = [],
+  effectIds: string[] = [],
+): string {
+  return JSON.stringify({
+    name,
+    "plugin-id": pluginId,
+    sid: 1,
+    instanceVariables: [],
+    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
+    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
+    members,
+  });
+}
+
 describe("computeDomainData", () => {
   let tmpDir: string;
 
@@ -440,6 +471,92 @@ describe("computeDomainData", () => {
     const payload = domainA.referencesFrom.get("DomainB")!;
     assert.equal(payload.length, 1, "deduplicated to a single entry");
     assert.deepEqual(payload, ["score"]);
+  });
+
+  it("attributes an object type under a domain's objectTypeDirs into that domain's addons", () => {
+    createFile(
+      tmpDir,
+      "objectTypes/Battle/Hero.json",
+      makeObjectType("Hero", "Sprite", ["Timer"]),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        Battle: { description: "Battle", objectTypeDirs: ["Battle"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const battle = result.domains.find((d) => d.name === "Battle")!;
+
+    assert.equal(battle.addons.length, 1);
+    assert.equal(battle.addons[0].name, "Hero");
+    assert.equal(battle.addons[0].source, "objectType");
+    assert.equal(battle.addons[0].pluginId, "Sprite");
+    assert.deepEqual(result.unclassified, []);
+  });
+
+  it("attributes a family under a domain's familyDirs into that domain's addons", () => {
+    createFile(
+      tmpDir,
+      "families/Battle/Units.json",
+      makeFamily("Units", "Sprite", ["Hero"]),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        Battle: { description: "Battle", familyDirs: ["Battle"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const battle = result.domains.find((d) => d.name === "Battle")!;
+
+    assert.equal(battle.addons.length, 1);
+    assert.equal(battle.addons[0].name, "Units");
+    assert.equal(battle.addons[0].source, "family");
+    assert.equal(battle.addons[0].pluginId, "Sprite");
+    assert.deepEqual(result.unclassified, []);
+  });
+
+  it("is graceful when neither objectTypes/ nor families/ exist — every domain's addons is []", () => {
+    // beforeEach only creates eventSheets/, layouts/, scripts/ — objectTypes/ and families/ are absent
+    const config: DomainConfig = {
+      domains: {
+        Auth: { description: "Auth" },
+        Battle: { description: "Battle", objectTypeDirs: ["Battle"], familyDirs: ["Battle"] },
+      },
+    };
+
+    let result: ReturnType<typeof computeDomainData> | undefined;
+    assert.doesNotThrow(() => {
+      result = computeDomainData(tmpDir, config);
+    });
+    assert.isDefined(result);
+    for (const domain of result!.domains) {
+      assert.deepEqual(domain.addons, [], `${domain.name} should have no addons`);
+    }
+  });
+
+  it("an object type under no matching objectTypeDirs lands in unclassified, not in any domain's addons", () => {
+    createFile(
+      tmpDir,
+      "objectTypes/Orphan/Widget.json",
+      makeObjectType("Widget", "Sprite"),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        Battle: { description: "Battle", objectTypeDirs: ["Battle"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const battle = result.domains.find((d) => d.name === "Battle")!;
+
+    assert.deepEqual(battle.addons, []);
+    assert.equal(result.unclassified.length, 1);
+    assert.include(result.unclassified[0], "objectTypes/Orphan/Widget.json");
   });
 });
 
