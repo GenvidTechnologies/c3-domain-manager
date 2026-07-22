@@ -72,6 +72,8 @@ Each entry under `domains` is a primary domain. Fields:
 | `eventSheetDirs` | string[] | Subdirectories of `eventSheets/` owned by this domain |
 | `layoutDirs` | string[] | Subdirectories of `layouts/` owned by this domain |
 | `scriptDirs` | string[] | Subdirectories of `scripts/` owned by this domain |
+| `objectTypeDirs` | string[] | Subdirectories of `objectTypes/` owned by this domain (optional; matched by longest prefix, same as the other `*Dirs` arrays) |
+| `familyDirs` | string[] | Subdirectories of `families/` owned by this domain (optional; matched by longest prefix, same as the other `*Dirs` arrays) |
 | `glossary` | Record<string, string> | Domain-specific term definitions (optional) |
 
 ### sharedSubdomains
@@ -116,6 +118,8 @@ File type roots:
 | `eventSheet` | `eventSheets/` |
 | `layout` | `layouts/` |
 | `script` | `scripts/` |
+| `objectType` | `objectTypes/` |
+| `family` | `families/` |
 
 Example: a file at `eventSheets/Battle/Skills/ActiveSkills.json` with config `eventSheetDirs: ["Battle"]` matches `Battle/` and is classified under that domain. If a second domain declares `eventSheetDirs: ["Battle/Skills"]`, the longer prefix wins and the file goes to the second domain.
 
@@ -245,6 +249,16 @@ Because it reads sheets directly from disk, the MCP tool does not append the sta
 Like `validate-editor`, this is a read-side diagnostic only: it derives attribution fresh from disk via `@genvidtech/c3source`'s `collectAddonAttribution`, independent of `domain-config.json` and the cached domain index (the MCP tool likewise omits the stale-index warning).
 
 Unlike every other diagnostic in this tool, `addon-inventory` requires a valid project manifest: it calls `project.manifest()`, which throws if `project.c3proj` is missing or malformed, rather than degrading gracefully — an addon inventory has nothing meaningful to report without a manifest to cross-reference against. See `docs/decisions/0009-addon-inventory-project-wide-diagnostic.md`.
+
+## Per-domain addon attribution
+
+Object types and families can opt into domain classification via the `objectTypeDirs`/`familyDirs` config fields documented above. When declared, `computeDomainData` classifies each object type and family the same way it classifies event sheets, layouts, and scripts — by longest matching directory prefix, with both `domains` and `sharedSubdomains` participating — and attributes each one to its owning domain using `@genvidtech/c3source`'s pure per-file `attributeObjectType`/`attributeFamily`. Each `DomainData` gains an `addons: AddonAttribution[]` field, and the generated domain page for that domain (`formatDomainPage`) renders an "Addons" section listing the deduplicated set of plugin/behavior/effect ids the domain draws on, followed by the per-object-type/family breakdown. Domains that classify no object types or families omit the section entirely.
+
+This is a different granularity of the same underlying attribution primitives `addon-inventory` uses (see above): `addon-inventory` cross-references the *whole project's* attribution against the manifest's declared `usedAddons` to find dead dependencies and manifest drift, while per-domain attribution answers "which addons does *this domain* draw on" — useful for judging a domain's coupling to third-party/native plugins when reviewing or splitting it. The two are complementary, not redundant: per-domain attribution has no notion of the manifest and reports no drift, and `addon-inventory` has no notion of domains.
+
+**Graceful degradation.** `objectTypeDirs`/`familyDirs` are optional — a domain that doesn't declare them simply classifies no object types or families. Projects with no `objectTypes/`/`families/` directories at all, or with object types/families that don't match any declared dir (flat or asset-kind projects), have those files land in the same flat `unclassified` list `list-uncategorized` already reports for event sheets, layouts, and scripts — never an error.
+
+**Not fed into other analysis.** Object types and families are data, not behavioral files, so they are deliberately excluded from `health.ts` coverage counts and cross-domain hub detection — attributing them there would silently change existing domains' coverage numbers. See `docs/decisions/0010-per-domain-addon-attribution.md`.
 
 ## Maintenance
 
