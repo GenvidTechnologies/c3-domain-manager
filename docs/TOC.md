@@ -28,3 +28,4 @@ Architecture Decision Records, numbered chronologically by when the decision was
 - `decisions/0009-addon-inventory-project-wide-diagnostic.md` — adopt c3source 1.8.0 addon attribution as a project-wide read-side `addon-inventory` diagnostic; defer per-domain attribution and expression-reference coupling (issue #25)
 - `decisions/0010-per-domain-addon-attribution.md` — adopt per-domain addon attribution via a new `objectTypeDirs`/`familyDirs` classification dimension; defer expression-reference coupling (issue #26)
 - `decisions/0011-expression-reference-coupling.md` — add expression (member) references as a third cross-domain coupling source, fulfilling issue #26's deferral (issue #28)
+- `decisions/0012-coupling-hub-discount.md` — opt-in `coupling` config block that discounts shared-kernel hub coupling edges, uniformly across all three sources and every consumer, fulfilling issue #28's deferral (issue #30)
