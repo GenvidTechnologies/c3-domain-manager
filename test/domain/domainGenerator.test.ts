@@ -853,6 +853,61 @@ describe("loadConfig", () => {
       "kept",
     );
   });
+
+  // R12: coupling block round-trips, including passthrough of an unknown nested key
+  it("R12: retains coupling.discountSharedKernel and coupling.hubDomains (passthrough)", async () => {
+    const configObj = {
+      domains: {
+        Core: { description: "Core" },
+      },
+      coupling: {
+        discountSharedKernel: true,
+        hubDomains: ["Core"],
+        unknownKey: "kept",
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "domain-config.json"),
+      JSON.stringify(configObj),
+      "utf-8",
+    );
+
+    const result = await loadConfig(tmpDir, "domain-config.json");
+
+    assert.equal(result.coupling?.discountSharedKernel, true);
+    assert.deepEqual(result.coupling?.hubDomains, ["Core"]);
+    assert.equal(
+      (result.coupling as Record<string, unknown>)["unknownKey"],
+      "kept",
+    );
+  });
+
+  // R13: malformed coupling.hubDomains (not an array) causes rejection with loadProjectConfig( prefix
+  it("R13: rejects when coupling.hubDomains is malformed", async () => {
+    const configObj = {
+      domains: {
+        Core: { description: "Core" },
+      },
+      coupling: {
+        hubDomains: "not-an-array",
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "domain-config.json"),
+      JSON.stringify(configObj),
+      "utf-8",
+    );
+
+    let caught: Error | undefined;
+    try {
+      await loadConfig(tmpDir, "domain-config.json");
+    } catch (e) {
+      caught = e as Error;
+    }
+
+    assert.isDefined(caught, "loadConfig should have thrown");
+    assert.include(caught!.message, "loadProjectConfig(");
+  });
 });
 
 describe("extractEventVarDecls", () => {

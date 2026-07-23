@@ -31,18 +31,27 @@ const DomainDefinitionSchema = z
 
 const SharedSubdomainDefinitionSchema = DomainDefinitionSchema;
 
+const CouplingOptionsSchema = z
+  .object({
+    discountSharedKernel: z.boolean().optional(),
+    hubDomains: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
 export const DomainConfigSchema = z
   .object({
     domains: z.record(z.string(), DomainDefinitionSchema),
     sharedSubdomains: z.record(z.string(), SharedSubdomainDefinitionSchema).optional(),
     overrides: z.record(z.string(), z.string()).optional(),
     relationships: z.array(RelationshipSchema).optional(),
+    coupling: CouplingOptionsSchema.optional(),
   })
   .passthrough();
 
 export type Relationship = z.infer<typeof RelationshipSchema>;
 export type DomainDefinition = z.infer<typeof DomainDefinitionSchema>;
 export type SharedSubdomainDefinition = z.infer<typeof SharedSubdomainDefinitionSchema>;
+export type CouplingOptions = z.infer<typeof CouplingOptionsSchema>;
 export type DomainConfig = z.infer<typeof DomainConfigSchema>;
 
 export interface FunctionDef {
