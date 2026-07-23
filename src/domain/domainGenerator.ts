@@ -10,6 +10,8 @@ import {
   getEventVarReferenceName,
   attributeObjectType,
   attributeFamily,
+  extractExpressionReferences,
+  isScriptAction,
 } from "@genvidtech/c3source";
 import type {
   EventSheet,
@@ -18,6 +20,8 @@ import type {
   FunctionParameter,
   ObjectType,
   Family,
+  Condition,
+  ScriptAction,
 } from "@genvidtech/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
@@ -76,6 +80,42 @@ export function extractEventVarRefs(sheet: EventSheet): string[] {
       for (const action of event.actions) {
         const name = getEventVarReferenceName(action);
         if (name !== null) names.add(name);
+      }
+    }
+  });
+  return [...names];
+}
+
+/** Collect the `objectName` of every `reference` token in an ACE's string parameter values. */
+function collectParamRefs(ace: Condition | ScriptAction | Record<string, unknown>, out: Set<string>): void {
+  const params = (ace as { parameters?: Record<string, unknown> }).parameters;
+  if (!params) return;
+  for (const value of Object.values(params)) {
+    if (typeof value !== "string") continue; // only string params are C3 expressions
+    for (const tok of extractExpressionReferences(value)) {
+      if (tok.kind === "reference") out.add(tok.objectName);
+    }
+  }
+}
+
+/**
+ * Deduped object/family/behavior-owner names referenced in raw ACE parameter
+ * expression strings anywhere in a sheet's event tree. Walks every condition and
+ * every non-script action, runs c3source's never-throwing extractExpressionReferences
+ * over each string parameter VALUE, and collects the objectName of every `reference`
+ * token. behaviorName is ignored for resolution (objectName is the sole join key).
+ * Script actions (TypeScript, not C3 expressions) are skipped.
+ */
+export function extractExpressionRefs(sheet: EventSheet): string[] {
+  const names = new Set<string>();
+  visitEvents(sheet.events, (event) => {
+    if (hasConditions(event)) {
+      for (const cond of event.conditions) collectParamRefs(cond, names);
+    }
+    if (hasActions(event)) {
+      for (const action of event.actions) {
+        if (isScriptAction(action)) continue; // ScriptAction: TS, not C3 expr
+        collectParamRefs(action, names);
       }
     }
   });
@@ -163,6 +203,8 @@ export function computeDomainData(
       includedBy: new Map(),
       referencesFrom: new Map(),
       referencedBy: new Map(),
+      expressionRefsFrom: new Map(),
+      expressionRefsBy: new Map(),
       addons: [],
       strategy: def.strategy,
     });
@@ -182,6 +224,8 @@ export function computeDomainData(
         includedBy: new Map(),
         referencesFrom: new Map(),
         referencedBy: new Map(),
+        expressionRefsFrom: new Map(),
+        expressionRefsBy: new Map(),
         addons: [],
         isSharedSubdomain: true,
         strategy: def.strategy,
@@ -194,6 +238,8 @@ export function computeDomainData(
   const rawIncludes = new Map<string, string[]>(); // domainName → raw include sheet names
   const varDeclIndex = new Map<string, Set<string>>(); // variable name → set of declaring domains
   const rawRefs = new Map<string, string[]>(); // domainName → referenced variable names (raw)
+  const objectNameIndex = new Map<string, Set<string>>(); // object/family name → declaring domains
+  const rawExprRefs = new Map<string, string[]>(); // domainName → referenced object/family names (raw)
 
   for (const sheetPath of eventSheetPaths) {
     const relPath = path.relative(rootDir, sheetPath).replace(/\\/g, "/");
@@ -247,6 +293,14 @@ export function computeDomainData(
       existing.push(...refs);
       rawRefs.set(domain, existing);
     }
+
+    // Accumulate raw expression (object/family member) references for cross-domain resolution later
+    const exprRefs = extractExpressionRefs(sheet);
+    if (exprRefs.length > 0) {
+      const existing = rawExprRefs.get(domain) ?? [];
+      existing.push(...exprRefs);
+      rawExprRefs.set(domain, existing);
+    }
   }
 
   // Classify and attribute object types
@@ -265,6 +319,9 @@ export function computeDomainData(
     const content = fs.readFileSync(objectTypePath, "utf-8");
     const objectType: ObjectType = JSON.parse(content);
     domainData.addons.push(attributeObjectType(objectType));
+
+    if (!objectNameIndex.has(objectType.name)) objectNameIndex.set(objectType.name, new Set());
+    objectNameIndex.get(objectType.name)!.add(domain);
   }
 
   // Classify and attribute families
@@ -283,6 +340,9 @@ export function computeDomainData(
     const content = fs.readFileSync(familyPath, "utf-8");
     const family: Family = JSON.parse(content);
     domainData.addons.push(attributeFamily(family));
+
+    if (!objectNameIndex.has(family.name)) objectNameIndex.set(family.name, new Set());
+    objectNameIndex.get(family.name)!.add(domain);
   }
 
   // Classify layouts
@@ -377,8 +437,37 @@ export function computeDomainData(
     }
   }
 
+  // Resolve cross-domain dependencies from expression (member) references.
+  // A reference resolves to EVERY domain that owns (classifies) an object type or family
+  // of that name (attribute-to-all on collision); same-domain and unresolved names are skipped.
+  for (const [domainName, domainData] of domainDataMap) {
+    const refs = rawExprRefs.get(domainName) ?? [];
+    for (const objName of refs) {
+      const declaringDomains = objectNameIndex.get(objName);
+      if (!declaringDomains) continue; // unresolved — system/built-in or unclassified
+      for (const targetDomain of declaringDomains) {
+        if (targetDomain === domainName) continue; // same-domain — not cross-domain
+        if (!domainData.expressionRefsFrom.has(targetDomain)) domainData.expressionRefsFrom.set(targetDomain, []);
+        const out = domainData.expressionRefsFrom.get(targetDomain)!;
+        if (!out.includes(objName)) out.push(objName);
+        const targetData = domainDataMap.get(targetDomain);
+        if (targetData) {
+          if (!targetData.expressionRefsBy.has(domainName)) targetData.expressionRefsBy.set(domainName, []);
+          const inc = targetData.expressionRefsBy.get(domainName)!;
+          if (!inc.includes(objName)) inc.push(objName);
+        }
+      }
+    }
+  }
+
   // Sort domains by name for consistent output
   const domains = Array.from(domainDataMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  const expressionRefEdgeCount = domains.reduce(
+    (sum, d) => sum + Array.from(d.expressionRefsFrom.values()).reduce((s, names) => s + names.length, 0),
+    0,
+  );
+  log(`Resolved ${expressionRefEdgeCount} cross-domain expression-reference edges.`);
 
   return { domains, unclassified };
 }

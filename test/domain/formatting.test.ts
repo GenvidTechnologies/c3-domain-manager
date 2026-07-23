@@ -15,6 +15,8 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     includedBy: opts?.includedBy ?? new Map(),
     referencesFrom: opts?.referencesFrom ?? new Map(),
     referencedBy: opts?.referencedBy ?? new Map(),
+    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
+    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
     addons: opts?.addons ?? [],
     strategy: opts?.strategy,
   };
@@ -212,6 +214,56 @@ describe("formatting — strategy classification", () => {
       });
       const result = formatDomainPage(domain);
       assert.notInclude(result, "### Event-variable references into this domain");
+    });
+  });
+
+  describe("formatDomainPage — member reference (expression) sections", () => {
+    it("renders outgoing member references section when expressionRefsFrom is non-empty", () => {
+      const domain = makeDomain("Combat", {
+        expressionRefsFrom: new Map([["UI", ["Hero", "HealthBar"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "### Member references from this domain");
+      assert.include(result, "→ UI (2 members): HealthBar, Hero");
+    });
+
+    it("renders incoming member references section when expressionRefsBy is non-empty", () => {
+      const domain = makeDomain("UI", {
+        expressionRefsBy: new Map([["Combat", ["HealthBar"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "### Member references into this domain");
+      assert.include(result, "← Combat: HealthBar");
+    });
+
+    it("truncates member lists longer than 5 with ', ...'", () => {
+      const domain = makeDomain("Combat", {
+        expressionRefsFrom: new Map([["UI", ["a", "b", "c", "d", "e", "f"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.include(result, "→ UI (6 members): a, b, c, d, e, ...");
+    });
+
+    it("does not emit member-reference sections when both maps are empty", () => {
+      const domain = makeDomain("NoCoupling");
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "Member references");
+    });
+
+    it("does not emit outgoing section when only expressionRefsBy is set", () => {
+      const domain = makeDomain("UI", {
+        expressionRefsBy: new Map([["Combat", ["HealthBar"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "### Member references from this domain");
+    });
+
+    it("does not emit incoming section when only expressionRefsFrom is set", () => {
+      const domain = makeDomain("Combat", {
+        expressionRefsFrom: new Map([["UI", ["HealthBar"]]]),
+      });
+      const result = formatDomainPage(domain);
+      assert.notInclude(result, "### Member references into this domain");
     });
   });
 

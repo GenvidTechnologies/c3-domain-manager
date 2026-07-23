@@ -35,7 +35,7 @@ function toMermaidArrow(type: RelationshipType): string {
 interface Edge {
   from: string;
   to: string;
-  type: RelationshipType | "observed" | "observed-ref";
+  type: RelationshipType | "observed" | "observed-ref" | "observed-expr";
 }
 
 function collectIncludedDomains(
@@ -72,6 +72,16 @@ function collectIncludedDomains(
 
   // 1-hop neighbors via referencedBy (incoming event-var refs)
   for (const neighbor of focus.referencedBy.keys()) {
+    included.add(neighbor);
+  }
+
+  // 1-hop neighbors via expressionRefsFrom (outgoing expression refs)
+  for (const neighbor of focus.expressionRefsFrom.keys()) {
+    included.add(neighbor);
+  }
+
+  // 1-hop neighbors via expressionRefsBy (incoming expression refs)
+  for (const neighbor of focus.expressionRefsBy.keys()) {
     included.add(neighbor);
   }
 
@@ -124,6 +134,8 @@ function collectEdges(
   }
 
   // Add observed-ref edges: domain.referencesFrom entries not covered by declared or observed-include
+  // observedRefPairs is consumed by the observed-expr layer (Task 8) for precedence.
+  const observedRefPairs = new Set<string>();
   for (const domain of domains) {
     if (!includedNames.has(domain.name)) continue;
     for (const targetDomain of domain.referencesFrom.keys()) {
@@ -131,6 +143,20 @@ function collectEdges(
       const pairKey = `${domain.name}::${targetDomain}`;
       if (!declaredPairs.has(pairKey) && !observedIncludePairs.has(pairKey)) {
         edges.push({ from: domain.name, to: targetDomain, type: "observed-ref" });
+        observedRefPairs.add(pairKey);
+      }
+    }
+  }
+
+  // Add observed-expr edges: domain.expressionRefsFrom entries not covered by declared, observed-include,
+  // or observed-ref
+  for (const domain of domains) {
+    if (!includedNames.has(domain.name)) continue;
+    for (const targetDomain of domain.expressionRefsFrom.keys()) {
+      if (!includedNames.has(targetDomain)) continue;
+      const pairKey = `${domain.name}::${targetDomain}`;
+      if (!declaredPairs.has(pairKey) && !observedIncludePairs.has(pairKey) && !observedRefPairs.has(pairKey)) {
+        edges.push({ from: domain.name, to: targetDomain, type: "observed-expr" });
       }
     }
   }
@@ -151,6 +177,8 @@ function formatMermaid(includedNames: Set<string>, edges: Edge[]): string {
       lines.push(`  ${fromId} -.-> ${toId}`);
     } else if (edge.type === "observed-ref") {
       lines.push(`  ${fromId} -.->|var| ${toId}`);
+    } else if (edge.type === "observed-expr") {
+      lines.push(`  ${fromId} -.->|expr| ${toId}`);
     } else {
       const arrow = toMermaidArrow(edge.type);
       lines.push(`  ${fromId} ${arrow} ${toId}`);
@@ -176,7 +204,7 @@ function formatText(
   // Build adjacency for outgoing and incoming per domain
   // outgoing: from → to
   // incoming: to → from
-  type RelEntry = { neighbor: string; type: RelationshipType | "observed" | "observed-ref" };
+  type RelEntry = { neighbor: string; type: RelationshipType | "observed" | "observed-ref" | "observed-expr" };
   const outgoing = new Map<string, RelEntry[]>();
   const incoming = new Map<string, RelEntry[]>();
 

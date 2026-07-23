@@ -145,6 +145,7 @@ Running `c3-domain-manager generate` (or `regenerate` via MCP) writes files to `
   - Exported function signatures extracted from event sheets
   - Include graph (which sheets include which, within and across domains)
   - Event-variable reference graph (cross-domain references to/from this domain, when present)
+  - Member-reference graph (cross-domain object/family member references to/from this domain, when present)
   - Cross-domain dependency summary
 
 Commit `extracted/domain-index/` to version control so the index is always available without regenerating.
@@ -176,7 +177,7 @@ When using the MCP server, the resolved locations are forwarded from the CLI `se
 
 ## Cross-domain coupling sources
 
-Two independent sources contribute to the observed coupling graph between domains:
+Three independent sources contribute to the observed coupling graph between domains:
 
 ### Include coupling
 
@@ -197,21 +198,38 @@ C3 event sheets can also reference event variables declared in other sheets via 
 
 No `domain-config.json` schema change is required — reference coupling is derived entirely from event sheet content and does not need configuration.
 
+### Expression (member) reference coupling
+
+C3 event sheets also couple through raw ACE parameter expressions: a condition's or action's string parameter can reference a member of another object type, family, or behavior (e.g. `Player.Instance.count` or `EnemyFamily.IsInvisible`) without going through an include or an event-variable read. `extractExpressionRefs` walks every condition and every non-script action in a sheet — script actions hold TypeScript, not C3 expressions, and are skipped via `isScriptAction` — and runs `@genvidtech/c3source`'s `extractExpressionReferences` over each string parameter value, collecting the deduped `objectName` of every `reference` token. When a sheet in domain A references a member of an object type or family classified into domain B, that creates an expression edge from A to B. The graph is stored as two sibling maps alongside the include and event-variable maps: `expressionRefsFrom` (outgoing: A → B, payload = referenced object/family names) and `expressionRefsBy` (incoming: B ← A, same payload).
+
+**Resolution policy** (same shape as the event-variable policy above):
+
+- **Depends on the `objectTypeDirs`/`familyDirs` classification dimension** — resolution looks up each referenced name in an `objectNameIndex` built from the same object-type/family classification loop that powers per-domain addon attribution (see "Per-domain addon attribution" below). Unlike the event-variable source's global-scope approximation, this source needs no separate heuristic of its own — it reuses that classification directly.
+- **Attribute-to-all on collision** — a name classified into multiple domains creates an edge to every declaring domain.
+- **Unresolved references produce no edge** — a referenced name absent from `objectNameIndex` (a system/built-in object, or an object type/family the project never classified) is silently ignored, exactly as an unresolved event-variable name is.
+- **Same-domain references produce no edge** — consistent with the other two sources.
+- **Family references resolve to the family's own domain**, never to its member object types — a family classifies (and is indexed in `objectNameIndex`) under its own name, so a reference to the family resolves once, to the family's owner.
+- **Behavior-qualified references join on `objectName` only** — a reference such as `Object.Behavior.member` resolves via `objectName`; the behavior name plays no role in resolution.
+
+**Inert until configured:** this source is opt-in in a way the event-variable source is not. A project whose `domain-config.json` declares no `objectTypeDirs`/`familyDirs` has an empty `objectNameIndex`, so no expression edges resolve at all — even if its event sheets contain many member references. This is correct opt-in behavior, not a bug — see `docs/decisions/0011-expression-reference-coupling.md`.
+
+No further `domain-config.json` schema change is required beyond the `objectTypeDirs`/`familyDirs` fields documented above — expression coupling reuses that same classification dimension.
+
 ### How coupling surfaces in analysis
 
-Both coupling sources are aggregated with **union semantics** across all downstream consumers:
+All three coupling sources are aggregated with **union semantics** across all downstream consumers:
 
-- **Health metrics** (`computeHealth`) — Ca and Ce count the union of include-coupled and reference-coupled distinct domains, with overlap deduped (a domain that is both include-coupled and reference-coupled is counted only once).
-- **Boundary validation** (`validateBoundaries`) — the undeclared-dependency and forbidden-direction checks operate over the union of include and reference target domains. A reference edge to an undeclared domain produces an `undeclared` violation exactly as an include edge would.
-- **Context map** (`generateContextMap`) — reference coupling surfaces as a distinct `observed-ref` edge kind. In text format it appears as `[observed-ref]`; in Mermaid it renders as `-.->|var|`. Edge precedence is: declared > observed (include) > observed-ref. An include and a reference to the same domain pair produce only the higher-precedence edge.
-- **Domain pages** (`formatDomainPage`) — the "Cross-Domain Dependencies" section gains two subsections: "Event-variable references from this domain" and "Event-variable references into this domain", rendered only when the respective map is non-empty.
+- **Health metrics** (`computeHealth`) — Ca and Ce count the union of include-coupled, reference-coupled, and expression-coupled distinct domains, with overlap deduped (a domain coupled through more than one source is counted only once).
+- **Boundary validation** (`validateBoundaries`) — the undeclared-dependency and forbidden-direction checks operate over the union of include, reference, and expression target domains. An expression edge to an undeclared domain produces an `undeclared` violation exactly as an include or reference edge would.
+- **Context map** (`generateContextMap`) — expression coupling surfaces as a distinct `observed-expr` edge kind. In text format it appears as `[observed-expr]`; in Mermaid it renders as `-.->|expr|`. Edge precedence is: declared > observed (include) > observed-ref (event-variable) > observed-expr (member reference). Only the highest-precedence edge for a given domain pair is rendered; expression-coupled neighbors also count toward the 1-hop neighbor set shown for a focused domain.
+- **Domain pages** (`formatDomainPage`) — the "Cross-Domain Dependencies" section gains two more subsections: "Member references from this domain" and "Member references into this domain", rendered only when the respective map is non-empty.
 
 ## Health metrics
 
 `domain-health` (MCP tool or library `computeHealth`) computes per-domain:
 
-- **Ca (afferent coupling)** — how many other domains depend on this domain (via includes or event-variable references)
-- **Ce (efferent coupling)** — how many domains this domain depends on (via includes or event-variable references)
+- **Ca (afferent coupling)** — how many other domains depend on this domain (via includes, event-variable references, or member references)
+- **Ce (efferent coupling)** — how many domains this domain depends on (via includes, event-variable references, or member references)
 - **Instability** — `Ce / (Ca + Ce)`, range 0–1. 0 is maximally stable (nothing it depends on can break it); 1 is maximally unstable (many dependencies, no dependents)
 
 High instability in a core domain is a warning sign.
@@ -220,7 +238,7 @@ High instability in a core domain is a warning sign.
 
 `validate-boundaries` (MCP tool or library `validateBoundaries`) checks:
 
-- **Undeclared dependencies** — domain A includes sheets from domain B, or references event-variables declared in domain B, but no relationship is declared from A to B
+- **Undeclared dependencies** — domain A includes sheets from domain B, references event-variables declared in domain B, or references a member of an object type/family classified into domain B, but no relationship is declared from A to B
 - **Stale declarations** — a declared relationship has no corresponding observed dependency
 - **Forbidden directions** — e.g. a `supporting` domain depending on a `core` domain
 

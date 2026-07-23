@@ -1,8 +1,10 @@
 import type { DomainConfig, DomainData } from "./types.js";
 
-/** Distinct domains this domain couples TO, via includes OR event-variable references. */
+/** Distinct domains this domain couples TO, via includes, event-variable references, OR expression references. */
 function outgoingCoupledDomains(domain: DomainData): string[] {
-  return [...new Set([...domain.includesFrom.keys(), ...domain.referencesFrom.keys()])];
+  return [
+    ...new Set([...domain.includesFrom.keys(), ...domain.referencesFrom.keys(), ...domain.expressionRefsFrom.keys()]),
+  ];
 }
 
 export interface BoundaryViolation {

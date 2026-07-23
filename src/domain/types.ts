@@ -67,6 +67,10 @@ export interface DomainData {
   referencesFrom: Map<string, string[]>;
   /** domain → variable names of this domain's that the keyed domain references (event-variable coupling, incoming) */
   referencedBy: Map<string, string[]>;
+  /** domain → object/family names this domain references that the keyed domain owns (expression coupling, outgoing) */
+  expressionRefsFrom: Map<string, string[]>;
+  /** domain → object/family names of this domain's that the keyed domain references (expression coupling, incoming) */
+  expressionRefsBy: Map<string, string[]>;
   /** Addon attribution for every object type and family classified into this domain. */
   addons: AddonAttribution[];
   /** True if this domain is a shared subdomain (from config.sharedSubdomains) */

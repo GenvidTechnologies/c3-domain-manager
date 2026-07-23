@@ -511,4 +511,29 @@ function formatCrossDomainSection(domain: DomainData, lines: string[]): void {
     }
     lines.push("");
   }
+
+  // Member references from this domain (outgoing) \u2014 only when present
+  if (domain.expressionRefsFrom.size > 0) {
+    lines.push("### Member references from this domain");
+    const sortedDomains = Array.from(domain.expressionRefsFrom.keys()).sort();
+    for (const targetDomain of sortedDomains) {
+      const members = [...domain.expressionRefsFrom.get(targetDomain)!].sort();
+      const count = members.length;
+      const memberList = members.length > 5 ? members.slice(0, 5).join(", ") + ", ..." : members.join(", ");
+      lines.push(`- \u2192 ${targetDomain} (${count} ${count === 1 ? "member" : "members"}): ${memberList}`);
+    }
+    lines.push("");
+  }
+
+  // Member references into this domain (incoming) \u2014 only when present
+  if (domain.expressionRefsBy.size > 0) {
+    lines.push("### Member references into this domain");
+    const sortedDomains = Array.from(domain.expressionRefsBy.keys()).sort();
+    for (const sourceDomain of sortedDomains) {
+      const members = [...domain.expressionRefsBy.get(sourceDomain)!].sort();
+      const memberList = members.length > 5 ? members.slice(0, 5).join(", ") + ", ..." : members.join(", ");
+      lines.push(`- \u2190 ${sourceDomain}: ${memberList}`);
+    }
+    lines.push("");
+  }
 }
