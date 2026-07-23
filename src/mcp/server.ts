@@ -17,6 +17,7 @@ import { validateEditorStrictness, formatEditorStrictnessReport } from "../domai
 import { computeAddonInventory, formatAddonInventoryReport } from "../domain/addonInventory.js";
 import { computeHealth, formatHealthReport } from "../domain/health.js";
 import { generateContextMap } from "../domain/contextMap.js";
+import { computeHubDomains } from "../domain/coupling.js";
 import {
   listUncategorized,
   listStaleOverrides,
@@ -527,6 +528,8 @@ server.registerTool(
   async ({ domain: domainFilter }) =>
     rwlock.read(async () => {
       try {
+        const config = await loadDomainConfig();
+        if (isMcpError(config)) return config;
         const data = await getDomainData();
         if (isMcpError(data)) return data;
         const { domains } = data;
@@ -537,7 +540,8 @@ server.registerTool(
             return notFound("domain-health", `Domain '${domainFilter}' not found`);
           }
         }
-        const results = targetDomains.map(d => ({ name: d.name, ...computeHealth(d) }));
+        const hubDomains = computeHubDomains(domains, config);
+        const results = targetDomains.map(d => ({ name: d.name, ...computeHealth(d, hubDomains) }));
         const text = formatHealthReport(results);
         return { content: [{ type: "text", text: appendStaleWarning(text) }] };
       } catch (e) {
