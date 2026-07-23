@@ -220,6 +220,44 @@ describe("relationships", () => {
       assert.include(report.violations[0].message, "Core");
     });
 
+    it("undeclared edge to a hub target is discounted, but a non-hub undeclared target still fires", () => {
+      const domains = [
+        makeDomain("Support", {
+          strategy: "supporting",
+          includesFrom: new Map([
+            ["Core", ["Core/Sheet.json"]],
+            ["Other", ["Other/Sheet.json"]],
+          ]),
+        }),
+        makeDomain("Core", { strategy: "core" }),
+        makeDomain("Other"),
+      ];
+      const config: DomainConfig = { domains: {}, coupling: { hubDomains: ["Core"] } };
+      const report = validateBoundaries(domains, config);
+      const undeclared = report.violations.filter((v) => v.type === "undeclared");
+      assert.equal(undeclared.length, 1);
+      assert.equal(undeclared[0].from, "Support");
+      assert.equal(undeclared[0].to, "Other");
+    });
+
+    it("hub discount only suppresses 'undeclared'; a real forbidden edge into a hub still fires and stays undiscounted", () => {
+      const domains = [
+        makeDomain("Support", {
+          strategy: "supporting",
+          includesFrom: new Map([["Core", ["Core/Sheet.json"]]]),
+        }),
+        makeDomain("Core", { strategy: "core" }),
+      ];
+      const config: DomainConfig = { domains: {}, coupling: { hubDomains: ["Core"] } };
+      const report = validateBoundaries(domains, config);
+      const forbidden = report.violations.filter((v) => v.type === "forbidden");
+      const undeclared = report.violations.filter((v) => v.type === "undeclared");
+      assert.equal(forbidden.length, 1);
+      assert.equal(forbidden[0].from, "Support");
+      assert.equal(forbidden[0].to, "Core");
+      assert.equal(undeclared.length, 0);
+    });
+
     it("filterDomain returns only that domain's violations", () => {
       const domains = [
         makeDomain("Auth", { includesFrom: new Map([["Combat", ["Combat/Sheet.json"]]]) }),
