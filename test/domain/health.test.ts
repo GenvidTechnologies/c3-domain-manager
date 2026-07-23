@@ -138,6 +138,44 @@ describe("health", () => {
       assert.equal(metrics.ce, 2);
     });
 
+    it("expr-only Ce=1 when expressionRefsFrom has one entry and includesFrom/referencesFrom are empty", () => {
+      const domain = makeDomain("ExprOnly", {
+        expressionRefsFrom: new Map([["B", ["Player"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 1);
+      assert.equal(metrics.ca, 0);
+    });
+
+    it("expr-only Ca=1 when expressionRefsBy has one entry and includedBy/referencedBy are empty", () => {
+      const domain = makeDomain("ExprOnlyCa", {
+        expressionRefsBy: new Map([["A", ["Player"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ca, 1);
+      assert.equal(metrics.ce, 0);
+    });
+
+    it("three-source union dedup: Ce=1 when includesFrom, referencesFrom, AND expressionRefsFrom all key the same target", () => {
+      const domain = makeDomain("TripleOverlap", {
+        includesFrom: new Map([["B", ["sheet1"]]]),
+        referencesFrom: new Map([["B", ["score"]]]),
+        expressionRefsFrom: new Map([["B", ["Player"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 1);
+    });
+
+    it("disjoint three-source union: Ce=3 when includesFrom B, referencesFrom C, and expressionRefsFrom D", () => {
+      const domain = makeDomain("TripleDisjoint", {
+        includesFrom: new Map([["B", ["sheet1"]]]),
+        referencesFrom: new Map([["C", ["health"]]]),
+        expressionRefsFrom: new Map([["D", ["Player"]]]),
+      });
+      const metrics = computeHealth(domain);
+      assert.equal(metrics.ce, 3);
+    });
+
     it("instability reflects union-based ce/ca: Ce=2 Ca=1 yields Instability=2/3", () => {
       // include-only would give Ce=1; adding a ref to a new domain bumps Ce to 2
       const domain = makeDomain("UnionInstability", {
