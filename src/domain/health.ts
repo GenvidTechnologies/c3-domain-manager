@@ -1,3 +1,4 @@
+import { activeOutgoingKeys, inboundDiscounted } from "./coupling.js";
 import type { DomainData } from "./types.js";
 
 export interface HealthMetrics {
@@ -8,14 +9,16 @@ export interface HealthMetrics {
 }
 
 /** Compute health metrics for a single domain. */
-export function computeHealth(domain: DomainData): HealthMetrics {
-  const ce = new Set([
+export function computeHealth(domain: DomainData, hubs: Set<string> = new Set()): HealthMetrics {
+  const outgoingKeys = new Set([
     ...domain.includesFrom.keys(),
     ...domain.referencesFrom.keys(),
     ...domain.expressionRefsFrom.keys(),
-  ]).size;
-  const ca = new Set([...domain.includedBy.keys(), ...domain.referencedBy.keys(), ...domain.expressionRefsBy.keys()])
-    .size;
+  ]);
+  const ce = activeOutgoingKeys(outgoingKeys, hubs).length;
+  const ca = inboundDiscounted(domain.name, hubs)
+    ? 0
+    : new Set([...domain.includedBy.keys(), ...domain.referencedBy.keys(), ...domain.expressionRefsBy.keys()]).size;
   const instability = ca + ce === 0 ? 0 : ce / (ca + ce);
   const coverage = domain.eventSheets.length + domain.layouts.length + domain.scripts.length > 0 ? 1 : 0;
   return { ca, ce, instability, coverage };
