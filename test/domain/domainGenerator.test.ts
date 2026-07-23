@@ -3,7 +3,13 @@ import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { computeDomainData, loadConfig, extractEventVarDecls, extractEventVarRefs } from "../../src/domain/domainGenerator.js";
+import {
+  computeDomainData,
+  loadConfig,
+  extractEventVarDecls,
+  extractEventVarRefs,
+  extractExpressionRefs,
+} from "../../src/domain/domainGenerator.js";
 import type { DomainConfig } from "../../src/domain/types.js";
 import type { EventSheet } from "@genvidtech/c3source";
 
@@ -830,6 +836,181 @@ describe("extractEventVarRefs", () => {
     } as unknown as EventSheet;
 
     const result = extractEventVarRefs(sheet);
+
+    assert.deepEqual(result, []);
+  });
+});
+
+describe("extractExpressionRefs", () => {
+  it("collects an object name from a plain member-reference condition param", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 100,
+          conditions: [
+            { id: "compare-instance-variable", objectClass: "Sprite", sid: 101, parameters: { value: "Player.Health" } },
+          ],
+          actions: [],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, ["Player"]);
+  });
+
+  it("collects the object name (not the behavior name) from a behavior-prefixed reference", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 200,
+          conditions: [],
+          actions: [
+            {
+              id: "set-value",
+              objectClass: "Sprite",
+              sid: 201,
+              parameters: { value: "Player.Platform.VectorX" },
+            },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, ["Player"]);
+  });
+
+  it("collects a family-name-shaped reference without distinguishing it from an object", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 300,
+          conditions: [
+            { id: "compare-instance-variable", objectClass: "Sprite", sid: 301, parameters: { value: "Enemies.Speed" } },
+          ],
+          actions: [],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, ["Enemies"]);
+  });
+
+  it("ignores a member-reference-shaped string inside a quoted string literal", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 400,
+          conditions: [
+            {
+              id: "compare-instance-variable",
+              objectClass: "Sprite",
+              sid: 401,
+              parameters: { value: '"Player.Health is low"' },
+            },
+          ],
+          actions: [],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("ignores a systemFunction call and a bare variable (no reference token)", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 500,
+          conditions: [
+            { id: "compare-instance-variable", objectClass: "Sprite", sid: 501, parameters: { value: "int(dt)" } },
+          ],
+          actions: [
+            { id: "set-value", objectClass: "Sprite", sid: 502, parameters: { value: "foo" } },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("skips a script action entirely (TypeScript, not a C3 expression)", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 600,
+          conditions: [],
+          actions: [
+            { type: "script", language: "typescript", script: ["runtime.objects.Foo.x = 1;"] },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("dedupes an object name referenced twice across different events/params", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [
+        {
+          eventType: "block",
+          sid: 700,
+          conditions: [
+            { id: "compare-instance-variable", objectClass: "Sprite", sid: 701, parameters: { value: "Player.Health" } },
+          ],
+          actions: [
+            { id: "set-value", objectClass: "Sprite", sid: 702, parameters: { value: "Player.Score" } },
+          ],
+        },
+      ],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
+
+    assert.deepEqual(result, ["Player"]);
+  });
+
+  it("returns [] for an empty sheet", () => {
+    const sheet = {
+      name: "TestSheet",
+      sid: 1,
+      events: [],
+    } as unknown as EventSheet;
+
+    const result = extractExpressionRefs(sheet);
 
     assert.deepEqual(result, []);
   });

@@ -10,6 +10,8 @@ import {
   getEventVarReferenceName,
   attributeObjectType,
   attributeFamily,
+  extractExpressionReferences,
+  isScriptAction,
 } from "@genvidtech/c3source";
 import type {
   EventSheet,
@@ -18,6 +20,8 @@ import type {
   FunctionParameter,
   ObjectType,
   Family,
+  Condition,
+  ScriptAction,
 } from "@genvidtech/c3source";
 import { classifyFile } from "./classification.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
@@ -76,6 +80,42 @@ export function extractEventVarRefs(sheet: EventSheet): string[] {
       for (const action of event.actions) {
         const name = getEventVarReferenceName(action);
         if (name !== null) names.add(name);
+      }
+    }
+  });
+  return [...names];
+}
+
+/** Collect the `objectName` of every `reference` token in an ACE's string parameter values. */
+function collectParamRefs(ace: Condition | ScriptAction | Record<string, unknown>, out: Set<string>): void {
+  const params = (ace as { parameters?: Record<string, unknown> }).parameters;
+  if (!params) return;
+  for (const value of Object.values(params)) {
+    if (typeof value !== "string") continue; // only string params are C3 expressions
+    for (const tok of extractExpressionReferences(value)) {
+      if (tok.kind === "reference") out.add(tok.objectName);
+    }
+  }
+}
+
+/**
+ * Deduped object/family/behavior-owner names referenced in raw ACE parameter
+ * expression strings anywhere in a sheet's event tree. Walks every condition and
+ * every non-script action, runs c3source's never-throwing extractExpressionReferences
+ * over each string parameter VALUE, and collects the objectName of every `reference`
+ * token. behaviorName is ignored for resolution (objectName is the sole join key).
+ * Script actions (TypeScript, not C3 expressions) are skipped.
+ */
+export function extractExpressionRefs(sheet: EventSheet): string[] {
+  const names = new Set<string>();
+  visitEvents(sheet.events, (event) => {
+    if (hasConditions(event)) {
+      for (const cond of event.conditions) collectParamRefs(cond, names);
+    }
+    if (hasActions(event)) {
+      for (const action of event.actions) {
+        if (isScriptAction(action)) continue; // ScriptAction: TS, not C3 expr
+        collectParamRefs(action, names);
       }
     }
   });
