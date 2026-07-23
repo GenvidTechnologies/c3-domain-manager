@@ -155,6 +155,39 @@ describe("relationships", () => {
       assert.deepEqual(report.violations, []);
     });
 
+    it("expression-reference edge to undeclared domain → undeclared violation", () => {
+      const domains = [makeDomain("A", { expressionRefsFrom: new Map([["B", ["score"]]]) }), makeDomain("B")];
+      const config = makeConfig();
+      const report = validateBoundaries(domains, config);
+      assert.equal(report.violations.length, 1);
+      assert.equal(report.violations[0].type, "undeclared");
+      assert.equal(report.violations[0].from, "A");
+      assert.equal(report.violations[0].to, "B");
+    });
+
+    it("expression-reference edge covered by a declared relationship → no violation", () => {
+      const domains = [makeDomain("A", { expressionRefsFrom: new Map([["B", ["score"]]]) }), makeDomain("B")];
+      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const report = validateBoundaries(domains, config);
+      assert.deepEqual(report.violations, []);
+    });
+
+    it("supporting domain references core domain via expression-reference edge → forbidden violation", () => {
+      const domains = [
+        makeDomain("Support", {
+          strategy: "supporting",
+          expressionRefsFrom: new Map([["Core", ["health"]]]),
+        }),
+        makeDomain("Core", { strategy: "core" }),
+      ];
+      const config = makeConfig([{ from: "Core", to: "Support", type: "customer-supplier" }]);
+      const report = validateBoundaries(domains, config);
+      assert.equal(report.violations.length, 1);
+      assert.equal(report.violations[0].type, "forbidden");
+      assert.include(report.violations[0].message, "Support");
+      assert.include(report.violations[0].message, "Core");
+    });
+
     it("include + reference to same target → single undeclared violation", () => {
       const domains = [
         makeDomain("A", {
