@@ -282,4 +282,108 @@ describe("contextMap", () => {
       assert.notInclude(result, "Unrelated");
     });
   });
+
+  describe("generateContextMap - observed-expr edges", () => {
+    it("observed-expr edge in text: A expressionRefsFrom B → shows [observed-expr]", () => {
+      const domains = [
+        makeDomain("A", { expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [observed-expr]");
+      assert.include(result, "← A [observed-expr]");
+    });
+
+    it("observed-expr edge in mermaid: A expressionRefsFrom B → dotted arrow with expr label", () => {
+      const domains = [
+        makeDomain("A", { expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "mermaid", includeObserved: true });
+      assert.include(result, "-.->|expr|");
+    });
+
+    it("precedence: declared/include/ref/expr all present on one pair → only [declared] type wins", () => {
+      const domains = [
+        makeDomain("A", {
+          includesFrom: new Map([["B", ["B/Sheet.json"]]]),
+          referencesFrom: new Map([["B", ["score"]]]),
+          expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]),
+        }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [customer-supplier]");
+      assert.notInclude(result, "[observed]");
+      assert.notInclude(result, "observed-ref");
+      assert.notInclude(result, "observed-expr");
+    });
+
+    it("precedence: ref wins over expr — only [observed-ref] edge, no [observed-expr]", () => {
+      const domains = [
+        makeDomain("A", {
+          referencesFrom: new Map([["B", ["score"]]]),
+          expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]),
+        }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [observed-ref]");
+      assert.notInclude(result, "observed-expr");
+    });
+
+    it("precedence: include wins over expr — only [observed] edge, no [observed-expr]", () => {
+      const domains = [
+        makeDomain("A", {
+          includesFrom: new Map([["B", ["B/Sheet.json"]]]),
+          expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]),
+        }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ B [observed]");
+      assert.notInclude(result, "observed-expr");
+    });
+
+    it("includeObserved:false suppresses observed-expr edges", () => {
+      const domains = [
+        makeDomain("A", { expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]) }),
+        makeDomain("B"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: false });
+      assert.notInclude(result, "observed-expr");
+    });
+
+    it("focus-domain neighbor via expressionRefsFrom: domain B included when A expressionRefsFrom B", () => {
+      const domains = [
+        makeDomain("A", { expressionRefsFrom: new Map([["B", ["ChooseFoo"]]]) }),
+        makeDomain("B"),
+        makeDomain("Unrelated"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", domain: "A" });
+      assert.include(result, "A");
+      assert.include(result, "B");
+      assert.notInclude(result, "Unrelated");
+    });
+
+    it("focus-domain neighbor via expressionRefsBy: domain A included when B expressionRefsBy A", () => {
+      const domains = [
+        makeDomain("A"),
+        makeDomain("B", { expressionRefsBy: new Map([["A", ["ChooseFoo"]]]) }),
+        makeDomain("Unrelated"),
+      ];
+      const config = makeConfig();
+      const result = generateContextMap(domains, config, { format: "text", domain: "B" });
+      assert.include(result, "A");
+      assert.include(result, "B");
+      assert.notInclude(result, "Unrelated");
+    });
+  });
 });
