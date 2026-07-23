@@ -163,6 +163,8 @@ export function computeDomainData(
       includedBy: new Map(),
       referencesFrom: new Map(),
       referencedBy: new Map(),
+      expressionRefsFrom: new Map(),
+      expressionRefsBy: new Map(),
       addons: [],
       strategy: def.strategy,
     });
@@ -182,6 +184,8 @@ export function computeDomainData(
         includedBy: new Map(),
         referencesFrom: new Map(),
         referencedBy: new Map(),
+        expressionRefsFrom: new Map(),
+        expressionRefsBy: new Map(),
         addons: [],
         isSharedSubdomain: true,
         strategy: def.strategy,

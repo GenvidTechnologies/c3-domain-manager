@@ -15,6 +15,8 @@ function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
     includedBy: opts?.includedBy ?? new Map(),
     referencesFrom: opts?.referencesFrom ?? new Map(),
     referencedBy: opts?.referencedBy ?? new Map(),
+    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
+    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
     addons: opts?.addons ?? [],
   };
 }
