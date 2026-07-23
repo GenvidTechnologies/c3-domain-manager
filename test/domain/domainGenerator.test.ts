@@ -6,11 +6,12 @@ import * as os from "node:os";
 import {
   computeDomainData,
   loadConfig,
+  generateDomainIndex,
   extractEventVarDecls,
   extractEventVarRefs,
   extractExpressionRefs,
 } from "../../src/domain/domainGenerator.js";
-import type { DomainConfig } from "../../src/domain/types.js";
+import type { DomainConfig, DomainData } from "../../src/domain/types.js";
 import type { EventSheet } from "@genvidtech/c3source";
 
 /** Create a file (and its parent directories) in the temp dir. */
@@ -751,6 +752,141 @@ describe("computeDomainData", () => {
     assert.isTrue(domainC.expressionRefsFrom.has("DomainA"), "DomainC.expressionRefsFrom should have DomainA (family's own domain)");
     assert.deepEqual(domainC.expressionRefsFrom.get("DomainA"), ["Enemies"]);
     assert.isFalse(domainC.expressionRefsFrom.has("DomainB"), "DomainC.expressionRefsFrom should NOT have DomainB (members' domain)");
+  });
+});
+
+describe("generateDomainIndex", () => {
+  let tmpDir: string;
+  let outDir: string;
+
+  const COUPLING_MAP_KEYS = [
+    "includesFrom",
+    "includedBy",
+    "referencesFrom",
+    "referencedBy",
+    "expressionRefsFrom",
+    "expressionRefsBy",
+  ] as const;
+
+  function sortedEntries(m: Map<string, string[]>): Array<[string, string[]]> {
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }
+
+  /** Assert every one of the six coupling-edge maps is identical between two DomainData for the same domain. */
+  function assertCouplingMapsEqual(a: DomainData, b: DomainData): void {
+    for (const key of COUPLING_MAP_KEYS) {
+      assert.deepEqual(
+        sortedEntries(a[key]),
+        sortedEntries(b[key]),
+        `${a.name}.${key} should be identical regardless of the coupling config`,
+      );
+    }
+  }
+
+  function writeConfig(configObj: unknown): void {
+    fs.writeFileSync(path.join(tmpDir, "domain-config.json"), JSON.stringify(configObj), "utf-8");
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "generateDomainIndex-"));
+    outDir = path.join(tmpDir, "extracted");
+
+    // Core declares an eventSheet; UI includes it — a hub coupling edge to discount.
+    createFile(tmpDir, "eventSheets/Core/CoreEvents.json", eventSheetJson("Core/CoreEvents"));
+    createFile(
+      tmpDir,
+      "eventSheets/UI/UIEvents.json",
+      JSON.stringify({
+        name: "UI/UIEvents",
+        sid: 1,
+        events: [{ eventType: "include", includeSheet: "Core/CoreEvents" }],
+      }),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("discounts a hub domain end-to-end: excluded from the index Dependencies column, tagged on the detail page", async () => {
+    writeConfig({
+      domains: {
+        Core: { description: "Core", eventSheetDirs: ["Core"] },
+        UI: { description: "UI", eventSheetDirs: ["UI"] },
+      },
+      coupling: { hubDomains: ["Core"] },
+    });
+
+    await generateDomainIndex(tmpDir, outDir, tmpDir, "domain-config.json", () => {});
+
+    const indexContent = fs.readFileSync(path.join(outDir, "domain-index", "index.md"), "utf-8");
+    const uiLine = indexContent.split("\n").find((l) => l.startsWith("| [UI]"));
+    assert.isDefined(uiLine, "UI row should exist in the master index");
+    assert.notInclude(uiLine!, "Core", "hub domain excluded from the index Dependencies column");
+
+    const uiPage = fs.readFileSync(path.join(outDir, "domain-index", "UI.md"), "utf-8");
+    assert.include(uiPage, "(shared kernel)", "UI detail page tags the hub dependency as a shared kernel");
+  });
+
+  // R4: the discount is consumption-time only — computeDomainData's raw coupling
+  // graph must be byte-for-byte the same whether or not a `coupling` block is present.
+  it("R4: raw coupling maps are unchanged whether or not a coupling block is present", () => {
+    const configWithCoupling: DomainConfig = {
+      domains: {
+        Core: { description: "Core", eventSheetDirs: ["Core"] },
+        UI: { description: "UI", eventSheetDirs: ["UI"] },
+      },
+      coupling: { hubDomains: ["Core"] },
+    };
+    const configWithoutCoupling: DomainConfig = {
+      domains: {
+        Core: { description: "Core", eventSheetDirs: ["Core"] },
+        UI: { description: "UI", eventSheetDirs: ["UI"] },
+      },
+    };
+
+    const withCoupling = computeDomainData(tmpDir, configWithCoupling);
+    const withoutCoupling = computeDomainData(tmpDir, configWithoutCoupling);
+
+    for (const domainName of ["Core", "UI"]) {
+      const a = withCoupling.domains.find((d) => d.name === domainName)!;
+      const b = withoutCoupling.domains.find((d) => d.name === domainName)!;
+      assertCouplingMapsEqual(a, b);
+    }
+  });
+
+  it("logs a Discounting message only when the hub-domain set is non-empty", async () => {
+    writeConfig({
+      domains: {
+        Core: { description: "Core", eventSheetDirs: ["Core"] },
+        UI: { description: "UI", eventSheetDirs: ["UI"] },
+      },
+      coupling: { hubDomains: ["Core"] },
+    });
+    const logsWithHub: string[] = [];
+    await generateDomainIndex(tmpDir, outDir, tmpDir, "domain-config.json", (...args: unknown[]) =>
+      logsWithHub.push(String(args[0])),
+    );
+    assert.isTrue(
+      logsWithHub.some((l) => l.includes("Discounting 1 hub domain(s): Core")),
+      "expected a Discounting log line naming the hub domain",
+    );
+
+    fs.rmSync(outDir, { recursive: true, force: true });
+    writeConfig({
+      domains: {
+        Core: { description: "Core", eventSheetDirs: ["Core"] },
+        UI: { description: "UI", eventSheetDirs: ["UI"] },
+      },
+    });
+    const logsWithoutHub: string[] = [];
+    await generateDomainIndex(tmpDir, outDir, tmpDir, "domain-config.json", (...args: unknown[]) =>
+      logsWithoutHub.push(String(args[0])),
+    );
+    assert.isFalse(
+      logsWithoutHub.some((l) => l.includes("Discounting")),
+      "no Discounting log line when there is no coupling block",
+    );
   });
 });
 

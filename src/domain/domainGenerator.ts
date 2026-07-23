@@ -24,6 +24,7 @@ import type {
   ScriptAction,
 } from "@genvidtech/c3source";
 import { classifyFile } from "./classification.js";
+import { computeHubDomains } from "./coupling.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 import { DomainConfigSchema } from "./types.js";
@@ -484,17 +485,22 @@ export async function generateDomainIndex(
 
   const { domains, unclassified } = computeDomainData(rootDir, config, log);
 
+  const hubDomains = computeHubDomains(domains, config);
+  if (hubDomains.size > 0) {
+    log(`Discounting ${hubDomains.size} hub domain(s): ${[...hubDomains].sort().join(", ")}`);
+  }
+
   // Clean domain-index/ directory
   fs.rmSync(domainIndexDir, { recursive: true, force: true });
   fs.mkdirSync(domainIndexDir, { recursive: true });
 
   // Generate master index
-  const indexContent = formatDomainIndexPage(domains, unclassified);
+  const indexContent = formatDomainIndexPage(domains, unclassified, hubDomains);
   fs.writeFileSync(path.join(domainIndexDir, "index.md"), indexContent);
 
   // Generate per-domain pages
   for (const domain of domains) {
-    const pageContent = formatDomainPage(domain);
+    const pageContent = formatDomainPage(domain, hubDomains);
     // Sanitize domain name for filename (e.g., "Watch/Story" → "Watch-Story")
     const safeFileName = domain.name.replace(/\//g, "-");
     fs.writeFileSync(path.join(domainIndexDir, `${safeFileName}.md`), pageContent);
