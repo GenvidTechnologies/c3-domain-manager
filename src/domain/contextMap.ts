@@ -124,6 +124,8 @@ function collectEdges(
   }
 
   // Add observed-ref edges: domain.referencesFrom entries not covered by declared or observed-include
+  // observedRefPairs is consumed by the observed-expr layer (Task 8) for precedence.
+  const observedRefPairs = new Set<string>();
   for (const domain of domains) {
     if (!includedNames.has(domain.name)) continue;
     for (const targetDomain of domain.referencesFrom.keys()) {
@@ -131,6 +133,7 @@ function collectEdges(
       const pairKey = `${domain.name}::${targetDomain}`;
       if (!declaredPairs.has(pairKey) && !observedIncludePairs.has(pairKey)) {
         edges.push({ from: domain.name, to: targetDomain, type: "observed-ref" });
+        observedRefPairs.add(pairKey);
       }
     }
   }
