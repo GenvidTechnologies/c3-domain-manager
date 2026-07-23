@@ -1,4 +1,5 @@
 import { FILE_TYPES } from "./classification.js";
+import { activeOutgoingKeys, inboundDiscounted } from "./coupling.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 
 // --- Formatting ---
@@ -6,7 +7,11 @@ import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
 /**
  * Format the domain index page (master overview of all domains).
  */
-export function formatDomainIndex(domains: DomainData[], unclassified: string[]): string {
+export function formatDomainIndex(
+  domains: DomainData[],
+  unclassified: string[],
+  hubs: Set<string> = new Set(),
+): string {
   const lines: string[] = [];
 
   // Count totals
@@ -43,7 +48,7 @@ export function formatDomainIndex(domains: DomainData[], unclassified: string[])
 
     for (const domain of regularDomains) {
       const scriptsStr = formatScriptsCount(domain.scripts);
-      const deps = formatDependencies(domain.includesFrom);
+      const deps = formatDependencies(domain.includesFrom, hubs);
       const safeFileName = domain.name.replace(/\//g, "-");
       lines.push(
         `| [${domain.name}](${safeFileName}.md) | ${domain.description} | ${domain.eventSheets.length} | ${domain.layouts.length} | ${scriptsStr} | ${deps} |`,
@@ -64,7 +69,7 @@ export function formatDomainIndex(domains: DomainData[], unclassified: string[])
 
       for (const domain of sorted) {
         const scriptsStr = formatScriptsCount(domain.scripts);
-        const deps = formatDependencies(domain.includesFrom);
+        const deps = formatDependencies(domain.includesFrom, hubs);
         const safeFileName = domain.name.replace(/\//g, "-");
         lines.push(
           `| [${domain.name}](${safeFileName}.md) | ${domain.description} | ${domain.eventSheets.length} | ${domain.layouts.length} | ${scriptsStr} | ${deps} |`,
@@ -96,11 +101,11 @@ export function formatDomainIndex(domains: DomainData[], unclassified: string[])
   // Cross-domain hubs
   lines.push("## Cross-Domain Hubs");
   lines.push("");
-  const hubs = findCrossDomainHubs(domains);
-  if (hubs.length === 0) {
+  const crossDomainHubs = findCrossDomainHubs(domains);
+  if (crossDomainHubs.length === 0) {
     lines.push("No cross-domain hubs detected.");
   } else {
-    for (const hub of hubs) {
+    for (const hub of crossDomainHubs) {
       lines.push(`- **${hub.sheetName}** (${hub.domainName}): includes ${hub.totalSheets} sheets from ${hub.domainNames.join(", ")}`);
     }
   }
@@ -132,9 +137,9 @@ function formatScriptsCount(scripts: Array<{ path: string; isDirectory: boolean 
   return parts.length > 0 ? parts.join(", ") : "0";
 }
 
-function formatDependencies(includesFrom: Map<string, string[]>): string {
-  if (includesFrom.size === 0) return "";
-  const domainNames = Array.from(includesFrom.keys()).sort();
+function formatDependencies(includesFrom: Map<string, string[]>, hubs: Set<string>): string {
+  const domainNames = activeOutgoingKeys(includesFrom.keys(), hubs).sort();
+  if (domainNames.length === 0) return "";
   return "\u2192 " + domainNames.join(", ");
 }
 
@@ -185,7 +190,7 @@ function extractFileName(filePath: string): string {
 /**
  * Format a single domain's detail page.
  */
-export function formatDomainPage(domain: DomainData): string {
+export function formatDomainPage(domain: DomainData, hubs: Set<string> = new Set()): string {
   const lines: string[] = [];
 
   // Header
@@ -215,7 +220,7 @@ export function formatDomainPage(domain: DomainData): string {
   formatAddonsSection(domain, lines);
 
   // Cross-Domain Dependencies
-  formatCrossDomainSection(domain, lines);
+  formatCrossDomainSection(domain, lines, hubs);
 
   return lines.join("\n");
 }
@@ -444,9 +449,15 @@ function formatOverridesSection(config: DomainConfig): string {
   return lines.join("\n");
 }
 
-function formatCrossDomainSection(domain: DomainData, lines: string[]): void {
+function hubSuffix(targetDomain: string, hubs: Set<string>): string {
+  return hubs.has(targetDomain) ? " (shared kernel)" : "";
+}
+
+function formatCrossDomainSection(domain: DomainData, lines: string[], hubs: Set<string> = new Set()): void {
   lines.push("## Cross-Domain Dependencies");
   lines.push("");
+
+  const discounted = inboundDiscounted(domain.name, hubs);
 
   // Includes from this domain (outgoing)
   lines.push("### Includes from this domain");
@@ -463,13 +474,21 @@ function formatCrossDomainSection(domain: DomainData, lines: string[]): void {
       } else {
         sheetList = sheets.join(", ");
       }
-      lines.push(`- \u2192 ${targetDomain} (${count} ${count === 1 ? "sheet" : "sheets"}): ${sheetList}`);
+      lines.push(
+        `- \u2192 ${targetDomain} (${count} ${count === 1 ? "sheet" : "sheets"}): ${sheetList}${hubSuffix(targetDomain, hubs)}`,
+      );
     }
   }
   lines.push("");
 
   // Includes into this domain (incoming)
   lines.push("### Includes into this domain");
+  if (discounted) {
+    lines.push(
+      "_This domain is a shared kernel: its inbound coupling is discounted elsewhere (health ca=0; excluded from the index Dependencies column, boundary validation, and the context map). The raw incoming edges are still enumerated below._",
+    );
+    lines.push("");
+  }
   if (domain.includedBy.size === 0) {
     lines.push("None.");
   } else {
@@ -495,7 +514,9 @@ function formatCrossDomainSection(domain: DomainData, lines: string[]): void {
       const vars = [...domain.referencesFrom.get(targetDomain)!].sort();
       const count = vars.length;
       const varList = vars.length > 5 ? vars.slice(0, 5).join(", ") + ", ..." : vars.join(", ");
-      lines.push(`- \u2192 ${targetDomain} (${count} ${count === 1 ? "variable" : "variables"}): ${varList}`);
+      lines.push(
+        `- \u2192 ${targetDomain} (${count} ${count === 1 ? "variable" : "variables"}): ${varList}${hubSuffix(targetDomain, hubs)}`,
+      );
     }
     lines.push("");
   }
@@ -520,7 +541,9 @@ function formatCrossDomainSection(domain: DomainData, lines: string[]): void {
       const members = [...domain.expressionRefsFrom.get(targetDomain)!].sort();
       const count = members.length;
       const memberList = members.length > 5 ? members.slice(0, 5).join(", ") + ", ..." : members.join(", ");
-      lines.push(`- \u2192 ${targetDomain} (${count} ${count === 1 ? "member" : "members"}): ${memberList}`);
+      lines.push(
+        `- \u2192 ${targetDomain} (${count} ${count === 1 ? "member" : "members"}): ${memberList}${hubSuffix(targetDomain, hubs)}`,
+      );
     }
     lines.push("");
   }

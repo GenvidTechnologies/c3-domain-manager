@@ -188,6 +188,59 @@ describe("health", () => {
       assert.equal(metrics.ca, 1);
       assert.approximately(metrics.instability, 2 / 3, 0.001);
     });
+
+    it("hub domain: ca=0 when the domain itself is in the hubs set", () => {
+      const domain = makeDomain("Hub", {
+        includedBy: new Map([["A", ["sheet1"]]]),
+        referencedBy: new Map([["B", ["score"]]]),
+        expressionRefsBy: new Map([["C", ["Player"]]]),
+      });
+      const metrics = computeHealth(domain, new Set(["Hub"]));
+      assert.equal(metrics.ca, 0);
+      assert.equal(metrics.ce, 0);
+    });
+
+    it("hub discount drops ce by 1 when includesFrom targets a hub", () => {
+      const domain = makeDomain("CallerA", {
+        includesFrom: new Map([["H", ["sheet1"]]]),
+      });
+      const withoutHubs = computeHealth(domain, new Set());
+      const withHubs = computeHealth(domain, new Set(["H"]));
+      assert.equal(withoutHubs.ce, 1);
+      assert.equal(withHubs.ce, 0);
+    });
+
+    it("hub discount drops ce by 1 when referencesFrom targets a hub", () => {
+      const domain = makeDomain("CallerB", {
+        referencesFrom: new Map([["H", ["score"]]]),
+      });
+      const withoutHubs = computeHealth(domain, new Set());
+      const withHubs = computeHealth(domain, new Set(["H"]));
+      assert.equal(withoutHubs.ce, 1);
+      assert.equal(withHubs.ce, 0);
+    });
+
+    it("hub discount drops ce by 1 when expressionRefsFrom targets a hub", () => {
+      const domain = makeDomain("CallerC", {
+        expressionRefsFrom: new Map([["H", ["Player"]]]),
+      });
+      const withoutHubs = computeHealth(domain, new Set());
+      const withHubs = computeHealth(domain, new Set(["H"]));
+      assert.equal(withoutHubs.ce, 1);
+      assert.equal(withHubs.ce, 0);
+    });
+
+    it("cross-source dedup still holds with a hub present: non-hub target counted once", () => {
+      const domain = makeDomain("CallerD", {
+        includesFrom: new Map([
+          ["B", ["sheet1"]],
+          ["H", ["sheet2"]],
+        ]),
+        referencesFrom: new Map([["B", ["score"]]]),
+      });
+      const metrics = computeHealth(domain, new Set(["H"]));
+      assert.equal(metrics.ce, 1);
+    });
   });
 
   describe("formatHealthReport", () => {

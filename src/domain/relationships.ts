@@ -1,3 +1,4 @@
+import { activeOutgoingKeys, computeHubDomains } from "./coupling.js";
 import type { DomainConfig, DomainData } from "./types.js";
 
 /** Distinct domains this domain couples TO, via includes, event-variable references, OR expression references. */
@@ -23,11 +24,13 @@ export function validateBoundaries(domains: DomainData[], config: DomainConfig, 
   const relationships = config.relationships ?? [];
   const domainNames = new Set(domains.map((d) => d.name));
   const domainByName = new Map(domains.map((d) => [d.name, d]));
+  const hubs = computeHubDomains(domains, config);
 
   // Check 1: Observed undeclared — for each domain, check that all cross-domain
   // includes or event-variable references have a relationship declared (in either direction).
+  // Edges into a hub domain are discounted (not flagged as undeclared).
   for (const domain of domains) {
-    for (const targetDomain of outgoingCoupledDomains(domain)) {
+    for (const targetDomain of activeOutgoingKeys(outgoingCoupledDomains(domain), hubs)) {
       const covered = relationships.some(
         (r) => (r.from === targetDomain && r.to === domain.name) || (r.from === domain.name && r.to === targetDomain),
       );
@@ -59,6 +62,8 @@ export function validateBoundaries(domains: DomainData[], config: DomainConfig, 
   }
 
   // Check 3: Forbidden — supporting/generic domains that depend on core domains.
+  // Not hub-filtered: a real strategy-violating dependency must still be flagged
+  // even if the target is a discounted hub.
   for (const domain of domains) {
     if (domain.strategy !== "supporting" && domain.strategy !== "generic") continue;
     for (const targetDomain of outgoingCoupledDomains(domain)) {

@@ -2,6 +2,7 @@
 
 export * from "./domain/types.js";
 export * from "./domain/classification.js";
+export * from "./domain/coupling.js";
 export * from "./domain/formatting.js";
 export * from "./domain/domainGenerator.js";
 export * from "./domain/domainAnalysis.js";

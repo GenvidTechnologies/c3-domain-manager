@@ -57,7 +57,11 @@ If different domains implement the same concept independently (e.g. each domain 
       "type": "conformist",
       "description": "Gameplay reads the authenticated user ID without influencing Auth"
     }
-  ]
+  ],
+  "coupling": {
+    "discountSharedKernel": true,
+    "hubDomains": ["Legacy/GlobalState"]
+  }
 }
 ```
 
@@ -99,6 +103,17 @@ Optional. Declares the expected integration patterns between domains using DDD r
 | `open-host-service` | Upstream publishes a stable protocol for any consumer |
 
 Declared relationships are checked by `validate-boundaries`. Observed dependencies (found in event sheet includes and event-variable references) that are not declared produce warnings.
+
+### coupling
+
+Optional. Opt-in shared-kernel hub discount for the cross-domain coupling graph — see "How coupling surfaces in analysis" below for the full mechanism and per-consumer effect.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `discountSharedKernel` | boolean | When `true`, every domain with `isSharedSubdomain: true` is treated as a hub (optional) |
+| `hubDomains` | string[] | Additional explicit **domain** names to treat as hubs — domain names, not object-type or family names (optional) |
+
+Absent a `coupling` block, coupling output is byte-identical to a version of this tool without hub discounting at all — the feature is fully opt-in and non-destructive: it discounts edges only at consumption time, never at resolution time, so the raw coupling graph in `DomainData` is unaffected regardless of configuration. See `docs/decisions/0012-coupling-hub-discount.md`.
 
 ### Validation
 
@@ -223,6 +238,21 @@ All three coupling sources are aggregated with **union semantics** across all do
 - **Boundary validation** (`validateBoundaries`) — the undeclared-dependency and forbidden-direction checks operate over the union of include, reference, and expression target domains. An expression edge to an undeclared domain produces an `undeclared` violation exactly as an include or reference edge would.
 - **Context map** (`generateContextMap`) — expression coupling surfaces as a distinct `observed-expr` edge kind. In text format it appears as `[observed-expr]`; in Mermaid it renders as `-.->|expr|`. Edge precedence is: declared > observed (include) > observed-ref (event-variable) > observed-expr (member reference). Only the highest-precedence edge for a given domain pair is rendered; expression-coupled neighbors also count toward the 1-hop neighbor set shown for a focused domain.
 - **Domain pages** (`formatDomainPage`) — the "Cross-Domain Dependencies" section gains two more subsections: "Member references from this domain" and "Member references into this domain", rendered only when the respective map is non-empty.
+
+### Shared-kernel hub discount
+
+The three coupling sources above tend to concentrate heavily on a small set of shared-kernel singletons (analytics, localization, input, cloud-API objects) that nearly every domain touches — a real pattern, but low-information-density for a diagnostic meant to surface *distinctive* relationships. The optional `coupling` block (documented above) opts a project into discounting edges that target a configured hub domain set — the union of every `isSharedSubdomain: true` domain (when `discountSharedKernel` is `true`) and any domains explicitly listed in `hubDomains`. Discounting happens at consumption time only: the raw coupling graph in `DomainData` is untouched regardless of configuration, and a single edge predicate (source → target is discounted iff target is a hub) is applied uniformly across all three coupling sources. See `docs/decisions/0012-coupling-hub-discount.md` for the full rationale.
+
+Per-consumer effect:
+
+- **Health metrics** (`computeHealth`) — a hub domain's Ca is 0 (all inbound edges discounted); every other domain's Ce is the union of its three `*From` targets minus hubs.
+- **Boundary validation** (`validateBoundaries`) — an edge to a hub is discounted from the *undeclared*-dependency check, but the *forbidden*-direction check still runs over the full, undiscounted graph — a real supporting/generic → core violation still fires even when the target is a hub.
+- **Context map** (`generateContextMap`) — observed/observed-ref/observed-expr edges targeting a hub are dropped, and a hub is omitted from a focus domain's 1-hop neighbor set; declared relationships to a hub still render regardless.
+- **Index page** (`formatDomainIndex` → `formatDependencies`, the "Dependencies" column) — excludes hub targets.
+- **Domain pages** (`formatDomainPage`) — the one surface where the full graph stays visible: outgoing coupling to a hub is still listed, tagged `(shared kernel)`; a domain that is itself a hub gets a note that its inbound coupling is discounted elsewhere while its raw incoming edges remain fully enumerated on the page.
+- **MCP `domain-health` tool** — loads `domain-config.json` and applies the same hub set, so CLI and MCP agree.
+
+**Terminology note:** this config-driven `hubDomains` mechanism is unrelated to the index page's "Cross-Domain Hubs" section, produced by `findCrossDomainHubs`. That is an unconfigurable, unchanged structural degree-threshold diagnostic (a domain whose `includesFrom` spans ≥3 other domains and ≥5 total included sheets) that surfaces orchestrator-style event sheets — it shares the word "hub" with the coupling discount but is a different diagnostic answering a different question, and it is entirely out of scope for the discount described here.
 
 ## Health metrics
 

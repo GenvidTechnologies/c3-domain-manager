@@ -292,6 +292,37 @@ describe("formatting — strategy classification", () => {
     });
   });
 
+  describe("formatDomainIndex / formatDomainPage — hub discount (issue #30)", () => {
+    it("index Dependencies column excludes a hub target", () => {
+      const domains = [
+        makeDomain("Consumer", { description: "Consumer domain", includesFrom: new Map([["H", ["a.json"]]]) }),
+      ];
+      const withoutHubs = formatDomainIndex(domains, []);
+      assert.include(withoutHubs, "→ H");
+
+      const withHubs = formatDomainIndex(domains, [], new Set(["H"]));
+      assert.notInclude(withHubs, "→ H");
+    });
+
+    it("detail page tags an outgoing hub target with (shared kernel) but still lists it", () => {
+      const domain = makeDomain("Consumer", {
+        includesFrom: new Map([["H", ["a.json"]]]),
+      });
+      const result = formatDomainPage(domain, new Set(["H"]));
+      assert.include(result, "→ H");
+      assert.include(result, "(shared kernel)");
+    });
+
+    it("hub domain's own page carries an inbound-discount note and still enumerates raw incoming data", () => {
+      const hubDomain = makeDomain("H", {
+        includedBy: new Map([["Consumer", ["a.json"]]]),
+      });
+      const result = formatDomainPage(hubDomain, new Set(["H"]));
+      assert.include(result, "discounted");
+      assert.include(result, "← Consumer: a.json");
+    });
+  });
+
   describe("formatDomainConfig domains section — strategy field", () => {
     it("includes Strategy line when domain has strategy", () => {
       const config: DomainConfig = {

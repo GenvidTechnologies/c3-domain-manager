@@ -1,4 +1,5 @@
 import type { DomainConfig, DomainData, Relationship } from "./types.js";
+import { activeOutgoingKeys, computeHubDomains, inboundDiscounted } from "./coupling.js";
 
 export interface ContextMapOptions {
   format: "text" | "mermaid";
@@ -42,6 +43,7 @@ function collectIncludedDomains(
   domains: DomainData[],
   config: DomainConfig,
   focusDomain: string | undefined,
+  hubDomains: Set<string>,
 ): Set<string> {
   const domainByName = new Map(domains.map((d) => [d.name, d]));
 
@@ -55,34 +57,38 @@ function collectIncludedDomains(
   const included = new Set<string>();
   included.add(focusDomain);
 
-  // 1-hop neighbors via includesFrom (outgoing deps from domain data)
-  for (const neighbor of focus.includesFrom.keys()) {
+  // 1-hop neighbors via includesFrom (outgoing deps from domain data), hub targets discounted
+  for (const neighbor of activeOutgoingKeys(focus.includesFrom.keys(), hubDomains)) {
     included.add(neighbor);
   }
 
-  // 1-hop neighbors via includedBy (incoming deps from domain data)
-  for (const neighbor of focus.includedBy.keys()) {
+  // 1-hop neighbors via referencesFrom (outgoing event-var refs), hub targets discounted
+  for (const neighbor of activeOutgoingKeys(focus.referencesFrom.keys(), hubDomains)) {
     included.add(neighbor);
   }
 
-  // 1-hop neighbors via referencesFrom (outgoing event-var refs)
-  for (const neighbor of focus.referencesFrom.keys()) {
+  // 1-hop neighbors via expressionRefsFrom (outgoing expression refs), hub targets discounted
+  for (const neighbor of activeOutgoingKeys(focus.expressionRefsFrom.keys(), hubDomains)) {
     included.add(neighbor);
   }
 
-  // 1-hop neighbors via referencedBy (incoming event-var refs)
-  for (const neighbor of focus.referencedBy.keys()) {
-    included.add(neighbor);
-  }
+  // Incoming neighbors (includedBy/referencedBy/expressionRefsBy) are all discounted
+  // when the focus domain is itself a hub.
+  if (!inboundDiscounted(focusDomain, hubDomains)) {
+    // 1-hop neighbors via includedBy (incoming deps from domain data)
+    for (const neighbor of focus.includedBy.keys()) {
+      included.add(neighbor);
+    }
 
-  // 1-hop neighbors via expressionRefsFrom (outgoing expression refs)
-  for (const neighbor of focus.expressionRefsFrom.keys()) {
-    included.add(neighbor);
-  }
+    // 1-hop neighbors via referencedBy (incoming event-var refs)
+    for (const neighbor of focus.referencedBy.keys()) {
+      included.add(neighbor);
+    }
 
-  // 1-hop neighbors via expressionRefsBy (incoming expression refs)
-  for (const neighbor of focus.expressionRefsBy.keys()) {
-    included.add(neighbor);
+    // 1-hop neighbors via expressionRefsBy (incoming expression refs)
+    for (const neighbor of focus.expressionRefsBy.keys()) {
+      included.add(neighbor);
+    }
   }
 
   // 1-hop neighbors via declared relationships
@@ -99,6 +105,7 @@ function collectEdges(
   config: DomainConfig,
   includedNames: Set<string>,
   includeObserved: boolean,
+  hubDomains: Set<string>,
 ): Edge[] {
   const edges: Edge[] = [];
   const relationships = config.relationships ?? [];
@@ -125,6 +132,7 @@ function collectEdges(
     if (!includedNames.has(domain.name)) continue;
     for (const targetDomain of domain.includesFrom.keys()) {
       if (!includedNames.has(targetDomain)) continue;
+      if (inboundDiscounted(targetDomain, hubDomains)) continue;
       const pairKey = `${domain.name}::${targetDomain}`;
       if (!declaredPairs.has(pairKey)) {
         edges.push({ from: domain.name, to: targetDomain, type: "observed" });
@@ -140,6 +148,7 @@ function collectEdges(
     if (!includedNames.has(domain.name)) continue;
     for (const targetDomain of domain.referencesFrom.keys()) {
       if (!includedNames.has(targetDomain)) continue;
+      if (inboundDiscounted(targetDomain, hubDomains)) continue;
       const pairKey = `${domain.name}::${targetDomain}`;
       if (!declaredPairs.has(pairKey) && !observedIncludePairs.has(pairKey)) {
         edges.push({ from: domain.name, to: targetDomain, type: "observed-ref" });
@@ -154,6 +163,7 @@ function collectEdges(
     if (!includedNames.has(domain.name)) continue;
     for (const targetDomain of domain.expressionRefsFrom.keys()) {
       if (!includedNames.has(targetDomain)) continue;
+      if (inboundDiscounted(targetDomain, hubDomains)) continue;
       const pairKey = `${domain.name}::${targetDomain}`;
       if (!declaredPairs.has(pairKey) && !observedIncludePairs.has(pairKey) && !observedRefPairs.has(pairKey)) {
         edges.push({ from: domain.name, to: targetDomain, type: "observed-expr" });
@@ -247,8 +257,9 @@ export function generateContextMap(
   opts: ContextMapOptions,
 ): string {
   const includeObserved = opts.includeObserved ?? true;
-  const includedNames = collectIncludedDomains(domains, config, opts.domain);
-  const edges = collectEdges(domains, config, includedNames, includeObserved);
+  const hubDomains = computeHubDomains(domains, config);
+  const includedNames = collectIncludedDomains(domains, config, opts.domain, hubDomains);
+  const edges = collectEdges(domains, config, includedNames, includeObserved, hubDomains);
 
   if (opts.format === "mermaid") {
     return formatMermaid(includedNames, edges);
