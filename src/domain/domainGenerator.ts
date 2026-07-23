@@ -238,6 +238,8 @@ export function computeDomainData(
   const rawIncludes = new Map<string, string[]>(); // domainName → raw include sheet names
   const varDeclIndex = new Map<string, Set<string>>(); // variable name → set of declaring domains
   const rawRefs = new Map<string, string[]>(); // domainName → referenced variable names (raw)
+  const objectNameIndex = new Map<string, Set<string>>(); // object/family name → declaring domains
+  const rawExprRefs = new Map<string, string[]>(); // domainName → referenced object/family names (raw)
 
   for (const sheetPath of eventSheetPaths) {
     const relPath = path.relative(rootDir, sheetPath).replace(/\\/g, "/");
@@ -291,6 +293,14 @@ export function computeDomainData(
       existing.push(...refs);
       rawRefs.set(domain, existing);
     }
+
+    // Accumulate raw expression (object/family member) references for cross-domain resolution later
+    const exprRefs = extractExpressionRefs(sheet);
+    if (exprRefs.length > 0) {
+      const existing = rawExprRefs.get(domain) ?? [];
+      existing.push(...exprRefs);
+      rawExprRefs.set(domain, existing);
+    }
   }
 
   // Classify and attribute object types
@@ -309,6 +319,9 @@ export function computeDomainData(
     const content = fs.readFileSync(objectTypePath, "utf-8");
     const objectType: ObjectType = JSON.parse(content);
     domainData.addons.push(attributeObjectType(objectType));
+
+    if (!objectNameIndex.has(objectType.name)) objectNameIndex.set(objectType.name, new Set());
+    objectNameIndex.get(objectType.name)!.add(domain);
   }
 
   // Classify and attribute families
@@ -327,6 +340,9 @@ export function computeDomainData(
     const content = fs.readFileSync(familyPath, "utf-8");
     const family: Family = JSON.parse(content);
     domainData.addons.push(attributeFamily(family));
+
+    if (!objectNameIndex.has(family.name)) objectNameIndex.set(family.name, new Set());
+    objectNameIndex.get(family.name)!.add(domain);
   }
 
   // Classify layouts
@@ -421,8 +437,37 @@ export function computeDomainData(
     }
   }
 
+  // Resolve cross-domain dependencies from expression (member) references.
+  // A reference resolves to EVERY domain that owns (classifies) an object type or family
+  // of that name (attribute-to-all on collision); same-domain and unresolved names are skipped.
+  for (const [domainName, domainData] of domainDataMap) {
+    const refs = rawExprRefs.get(domainName) ?? [];
+    for (const objName of refs) {
+      const declaringDomains = objectNameIndex.get(objName);
+      if (!declaringDomains) continue; // unresolved — system/built-in or unclassified
+      for (const targetDomain of declaringDomains) {
+        if (targetDomain === domainName) continue; // same-domain — not cross-domain
+        if (!domainData.expressionRefsFrom.has(targetDomain)) domainData.expressionRefsFrom.set(targetDomain, []);
+        const out = domainData.expressionRefsFrom.get(targetDomain)!;
+        if (!out.includes(objName)) out.push(objName);
+        const targetData = domainDataMap.get(targetDomain);
+        if (targetData) {
+          if (!targetData.expressionRefsBy.has(domainName)) targetData.expressionRefsBy.set(domainName, []);
+          const inc = targetData.expressionRefsBy.get(domainName)!;
+          if (!inc.includes(objName)) inc.push(objName);
+        }
+      }
+    }
+  }
+
   // Sort domains by name for consistent output
   const domains = Array.from(domainDataMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  const expressionRefEdgeCount = domains.reduce(
+    (sum, d) => sum + Array.from(d.expressionRefsFrom.values()).reduce((s, names) => s + names.length, 0),
+    0,
+  );
+  log(`Resolved ${expressionRefEdgeCount} cross-domain expression-reference edges.`);
 
   return { domains, unclassified };
 }

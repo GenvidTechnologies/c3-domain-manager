@@ -564,6 +564,194 @@ describe("computeDomainData", () => {
     assert.equal(result.unclassified.length, 1);
     assert.include(result.unclassified[0], "objectTypes/Orphan/Widget.json");
   });
+
+  // R7: an object type in domain A, referenced by an event sheet in domain B,
+  // creates an expressionRefsFrom/expressionRefsBy edge in both directions.
+  it("R7: cross-domain expression reference creates an edge in expressionRefsFrom and expressionRefsBy", () => {
+    createFile(tmpDir, "objectTypes/DomainA/Player.json", makeObjectType("Player", "Sprite"));
+    createFile(
+      tmpDir,
+      "eventSheets/DomainB/Events.json",
+      JSON.stringify({
+        name: "DomainB/Events",
+        sid: 1,
+        events: [
+          {
+            eventType: "block",
+            sid: 10,
+            conditions: [
+              { id: "compare-instance-variable", objectClass: "Sprite", sid: 11, parameters: { value: "Player.Health" } },
+            ],
+            actions: [],
+          },
+        ],
+      }),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        DomainA: { description: "A", objectTypeDirs: ["DomainA"] },
+        DomainB: { description: "B", eventSheetDirs: ["DomainB"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const domainA = result.domains.find((d) => d.name === "DomainA")!;
+    const domainB = result.domains.find((d) => d.name === "DomainB")!;
+
+    assert.isTrue(domainB.expressionRefsFrom.has("DomainA"), "DomainB.expressionRefsFrom should have DomainA");
+    assert.deepEqual(domainB.expressionRefsFrom.get("DomainA"), ["Player"]);
+    assert.isTrue(domainA.expressionRefsBy.has("DomainB"), "DomainA.expressionRefsBy should have DomainB");
+    assert.deepEqual(domainA.expressionRefsBy.get("DomainB"), ["Player"]);
+  });
+
+  // R8: same-domain object-type-and-reference produces no expressionRefs edge.
+  it("R8: same-domain expression reference produces no edge", () => {
+    createFile(tmpDir, "objectTypes/DomainA/Player.json", makeObjectType("Player", "Sprite"));
+    createFile(
+      tmpDir,
+      "eventSheets/DomainA/Events.json",
+      JSON.stringify({
+        name: "DomainA/Events",
+        sid: 1,
+        events: [
+          {
+            eventType: "block",
+            sid: 10,
+            conditions: [
+              { id: "compare-instance-variable", objectClass: "Sprite", sid: 11, parameters: { value: "Player.Health" } },
+            ],
+            actions: [],
+          },
+        ],
+      }),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        DomainA: { description: "A", objectTypeDirs: ["DomainA"], eventSheetDirs: ["DomainA"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const domainA = result.domains.find((d) => d.name === "DomainA")!;
+
+    assert.equal(domainA.expressionRefsFrom.size, 0, "same-domain expression ref produces no edge");
+    assert.equal(domainA.expressionRefsBy.size, 0, "same-domain expression ref produces no referencedBy edge");
+  });
+
+  // R9: a reference to an unclassified/unknown object name produces no edge.
+  it("R9: unresolved expression reference produces no edge", () => {
+    createFile(
+      tmpDir,
+      "eventSheets/DomainA/Events.json",
+      JSON.stringify({
+        name: "DomainA/Events",
+        sid: 1,
+        events: [
+          {
+            eventType: "block",
+            sid: 10,
+            conditions: [
+              { id: "compare-instance-variable", objectClass: "Sprite", sid: 11, parameters: { value: "Keyboard.member" } },
+            ],
+            actions: [],
+          },
+        ],
+      }),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        DomainA: { description: "A", eventSheetDirs: ["DomainA"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const domainA = result.domains.find((d) => d.name === "DomainA")!;
+
+    assert.equal(domainA.expressionRefsFrom.size, 0, "no edge for unresolved object name");
+  });
+
+  // R10: collision — two object types both named "Player" classified into A and C —
+  // attributes the reference to both declaring domains.
+  it("R10: collision attributes the expression reference to all declaring domains", () => {
+    createFile(tmpDir, "objectTypes/DomainA/Player.json", makeObjectType("Player", "Sprite"));
+    createFile(tmpDir, "objectTypes/DomainC/Player.json", makeObjectType("Player", "Sprite"));
+    createFile(
+      tmpDir,
+      "eventSheets/DomainB/Events.json",
+      JSON.stringify({
+        name: "DomainB/Events",
+        sid: 1,
+        events: [
+          {
+            eventType: "block",
+            sid: 10,
+            conditions: [
+              { id: "compare-instance-variable", objectClass: "Sprite", sid: 11, parameters: { value: "Player.x" } },
+            ],
+            actions: [],
+          },
+        ],
+      }),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        DomainA: { description: "A", objectTypeDirs: ["DomainA"] },
+        DomainB: { description: "B", eventSheetDirs: ["DomainB"] },
+        DomainC: { description: "C", objectTypeDirs: ["DomainC"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const domainB = result.domains.find((d) => d.name === "DomainB")!;
+
+    assert.isTrue(domainB.expressionRefsFrom.has("DomainA"), "DomainB.expressionRefsFrom should have DomainA");
+    assert.isTrue(domainB.expressionRefsFrom.has("DomainC"), "DomainB.expressionRefsFrom should have DomainC");
+    assert.deepEqual(domainB.expressionRefsFrom.get("DomainA"), ["Player"]);
+    assert.deepEqual(domainB.expressionRefsFrom.get("DomainC"), ["Player"]);
+  });
+
+  // R11: a family reference resolves to the family's OWN domain, not its members' domain.
+  it("R11: a family reference resolves to the family's own domain, not the members' domain", () => {
+    createFile(tmpDir, "families/DomainA/Enemies.json", makeFamily("Enemies", "Sprite", ["Goblin"]));
+    createFile(tmpDir, "objectTypes/DomainB/Goblin.json", makeObjectType("Goblin", "Sprite"));
+    createFile(
+      tmpDir,
+      "eventSheets/DomainC/Events.json",
+      JSON.stringify({
+        name: "DomainC/Events",
+        sid: 1,
+        events: [
+          {
+            eventType: "block",
+            sid: 10,
+            conditions: [
+              { id: "compare-instance-variable", objectClass: "Sprite", sid: 11, parameters: { value: "Enemies.Speed" } },
+            ],
+            actions: [],
+          },
+        ],
+      }),
+    );
+
+    const config: DomainConfig = {
+      domains: {
+        DomainA: { description: "A", familyDirs: ["DomainA"] },
+        DomainB: { description: "B", objectTypeDirs: ["DomainB"] },
+        DomainC: { description: "C", eventSheetDirs: ["DomainC"] },
+      },
+    };
+
+    const result = computeDomainData(tmpDir, config);
+    const domainC = result.domains.find((d) => d.name === "DomainC")!;
+
+    assert.isTrue(domainC.expressionRefsFrom.has("DomainA"), "DomainC.expressionRefsFrom should have DomainA (family's own domain)");
+    assert.deepEqual(domainC.expressionRefsFrom.get("DomainA"), ["Enemies"]);
+    assert.isFalse(domainC.expressionRefsFrom.has("DomainB"), "DomainC.expressionRefsFrom should NOT have DomainB (members' domain)");
+  });
 });
 
 describe("loadConfig", () => {
