@@ -386,4 +386,62 @@ describe("contextMap", () => {
       assert.notInclude(result, "Unrelated");
     });
   });
+
+  describe("generateContextMap - hub discount", () => {
+    it("observed edge to a hub is omitted from text and mermaid output", () => {
+      const domains = [
+        makeDomain("A", { includesFrom: new Map([["Hub", ["Hub/Sheet.json"]]]) }),
+        makeDomain("Hub"),
+      ];
+      const configNoHub: DomainConfig = { domains: {} };
+      const configWithHub: DomainConfig = {
+        domains: {},
+        coupling: { hubDomains: ["Hub"] },
+      };
+
+      // Without the coupling block, the observed edge to Hub renders as usual.
+      const textNoHub = generateContextMap(domains, configNoHub, { format: "text", includeObserved: true });
+      assert.include(textNoHub, "[observed]");
+      const mermaidNoHub = generateContextMap(domains, configNoHub, { format: "mermaid", includeObserved: true });
+      assert.include(mermaidNoHub, "-.->");
+
+      // With Hub declared as a coupling hub, the observed edge is discounted away.
+      const textResult = generateContextMap(domains, configWithHub, { format: "text", includeObserved: true });
+      assert.notInclude(textResult, "[observed]");
+
+      const mermaidResult = generateContextMap(domains, configWithHub, { format: "mermaid", includeObserved: true });
+      assert.notInclude(mermaidResult, "-.->");
+    });
+
+    it("declared relationship to the same hub still renders even though it is discounted", () => {
+      const domains = [
+        makeDomain("A", { includesFrom: new Map([["Hub", ["Hub/Sheet.json"]]]) }),
+        makeDomain("Hub"),
+      ];
+      const config: DomainConfig = {
+        domains: {},
+        relationships: [{ from: "A", to: "Hub", type: "customer-supplier" }],
+        coupling: { hubDomains: ["Hub"] },
+      };
+      const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
+      assert.include(result, "→ Hub [customer-supplier]");
+      assert.notInclude(result, "[observed]");
+    });
+
+    it("1-hop neighbor set omits a hub only reachable via observed coupling", () => {
+      const domains = [
+        makeDomain("A", { includesFrom: new Map([["Hub", ["Hub/Sheet.json"]]]) }),
+        makeDomain("Hub"),
+        makeDomain("Unrelated"),
+      ];
+      const config: DomainConfig = {
+        domains: {},
+        coupling: { hubDomains: ["Hub"] },
+      };
+      const result = generateContextMap(domains, config, { format: "text", domain: "A" });
+      assert.include(result, "A");
+      assert.notInclude(result, "Hub");
+      assert.notInclude(result, "Unrelated");
+    });
+  });
 });
