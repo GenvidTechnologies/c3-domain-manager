@@ -140,6 +140,16 @@ Example: a file at `eventSheets/Battle/Skills/ActiveSkills.json` with config `ev
 
 Files that match no rule are "uncategorized". Run `c3-domain-manager list-uncategorized` to find them.
 
+**Editor-local artifacts are excluded from the walk, not just left unclassified.** `list-uncategorized` never presents these as unmapped work in the first place, via `@genvidtech/c3source`'s `isEditorLocalPath`:
+
+- `*.uistate.json` files
+- everything under a `uistate/` directory
+- `tsconfig.json`
+
+One exception: `scripts/ts-defs/` is itself editor-local by that same rule, but this tool deliberately keeps it walked and reportable so a project can index its generated `.d.ts` files into a domain via `scriptDirs` — see `docs/decisions/0013-editor-local-exclusion-list-uncategorized.md`. `tsconfig.json`/`uistate/` nested *inside* `ts-defs/` are still excluded.
+
+`list-uncategorized`'s root-level `scripts/` scan (files directly under `scripts/`, outside the allowlisted subdirectories) only considers `.ts` files — a `.js` root script is not reported. This is a known, currently-accepted limitation; see ADR 0013's consequences.
+
 ## Strategic classification
 
 The optional `strategy` field on a domain or subdomain marks its DDD strategic role:
@@ -304,7 +314,7 @@ Object types and families can opt into domain classification via the `objectType
 
 This is a different granularity of the same underlying attribution primitives `addon-inventory` uses (see above): `addon-inventory` cross-references the *whole project's* attribution against the manifest's declared `usedAddons` to find dead dependencies and manifest drift, while per-domain attribution answers "which addons does *this domain* draw on" — useful for judging a domain's coupling to third-party/native plugins when reviewing or splitting it. The two are complementary, not redundant: per-domain attribution has no notion of the manifest and reports no drift, and `addon-inventory` has no notion of domains.
 
-**Graceful degradation.** `objectTypeDirs`/`familyDirs` are optional — a domain that doesn't declare them simply classifies no object types or families. Projects with no `objectTypes/`/`families/` directories at all, or with object types/families that don't match any declared dir (flat or asset-kind projects), have those files land in the same flat `unclassified` list `list-uncategorized` already reports for event sheets, layouts, and scripts — never an error.
+**Graceful degradation.** `objectTypeDirs`/`familyDirs` are optional — a domain that doesn't declare them simply classifies no object types or families. Projects with no `objectTypes/`/`families/` directories at all, or with object types/families that don't match any declared dir (flat or asset-kind projects), have those files reported by `list-uncategorized` alongside any other unclassified event sheets, layouts, and scripts — never an error. (Editor-local artifacts, per the exclusion list above, are removed from that walk before classification is even attempted, so they never reach this fallback.)
 
 **Not fed into other analysis.** Object types and families are data, not behavioral files, so they are deliberately excluded from `health.ts` coverage counts and cross-domain hub detection — attributing them there would silently change existing domains' coverage numbers. See `docs/decisions/0010-per-domain-addon-attribution.md`.
 
