@@ -13,6 +13,10 @@ Each entry should be a one-line description.
 
 - `releasing.md` — how to cut a new release (version bump, tag convention, OIDC publish via `publish.yml`)
 
+## Process
+
+- `issue-triage.md` — issue-triage conventions (flat GitHub label set): categories, required fields, duplicate/dependency policy, and the `gh` mutation recipes
+
 ## Decision Records
 
 Architecture Decision Records, numbered chronologically by when the decision was made.
