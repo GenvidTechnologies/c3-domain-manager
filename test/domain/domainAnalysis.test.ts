@@ -194,6 +194,78 @@ describe("domainAnalysis", () => {
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, ["families/Orphan/Loose.json", "objectTypes/Orphan/Widget.json"]);
     });
+
+    it("does not report editor-local artifacts in unclaimed directories (issue #33)", () => {
+      // Claimed — sanity check that Login is unaffected.
+      createFile(tmpDir, "eventSheets/Login/LoginEvents.json");
+
+      // Unclaimed — real content files should be reported, editor-local
+      // siblings (.uistate.json / uistate/) should not.
+      createFile(tmpDir, "eventSheets/Orphan/OrphanEvents.json");
+      createFile(tmpDir, "eventSheets/Orphan/OrphanEvents.uistate.json");
+      createFile(tmpDir, "eventSheets/Orphan/uistate/Orphan.json");
+      createFile(tmpDir, "layouts/Orphan/OrphanLayout.json");
+      createFile(tmpDir, "layouts/Orphan/OrphanLayout.uistate.json");
+      createFile(tmpDir, "objectTypes/Orphan/Widget.json");
+      createFile(tmpDir, "objectTypes/Orphan/Widget.uistate.json");
+      createFile(tmpDir, "objectTypes/Orphan/uistate/Widget.json");
+      createFile(tmpDir, "families/Orphan/Loose.json");
+      createFile(tmpDir, "families/Orphan/Loose.uistate.json");
+
+      const config = makeConfig({
+        Auth: { description: "Auth", eventSheetDirs: ["Login"] },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.deepEqual(result, [
+        "eventSheets/Orphan/OrphanEvents.json",
+        "families/Orphan/Loose.json",
+        "layouts/Orphan/OrphanLayout.json",
+        "objectTypes/Orphan/Widget.json",
+      ]);
+    });
+
+    it("reports ts-defs source files but not their editor-local artifacts (issue #33)", () => {
+      createFile(tmpDir, "scripts/ts-defs/Player.d.ts");
+      createFile(tmpDir, "scripts/ts-defs/objects.d.ts");
+      createFile(tmpDir, "scripts/ts-defs/uistate/x.d.ts");
+      createFile(tmpDir, "scripts/ts-defs/tsconfig.json");
+      createFile(tmpDir, "scripts/tsconfig.json");
+      createFile(tmpDir, "scripts/main.ts");
+      // scripts/main.js pins the deliberate .ts-only filter at the scripts
+      // root (Construct 3 supports both .ts and .js; broader .js support is
+      // a tracked follow-up, not this change). scripts/ts-defs/** is
+      // deliberately walked and reported.
+      createFile(tmpDir, "scripts/main.js");
+
+      const config = makeConfig({
+        Auth: { description: "Auth" },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.deepEqual(result, [
+        "scripts/main.ts",
+        "scripts/ts-defs/Player.d.ts",
+        "scripts/ts-defs/objects.d.ts",
+      ]);
+    });
+
+    it("still classifies ts-defs into a domain that claims it in scriptDirs (issue #33)", () => {
+      createFile(tmpDir, "scripts/ts-defs/Player.d.ts");
+      createFile(tmpDir, "scripts/ts-defs/objects.d.ts");
+      createFile(tmpDir, "scripts/ts-defs/uistate/x.d.ts");
+      createFile(tmpDir, "scripts/ts-defs/tsconfig.json");
+      createFile(tmpDir, "scripts/tsconfig.json");
+      createFile(tmpDir, "scripts/main.ts");
+      createFile(tmpDir, "scripts/main.js");
+
+      const config = makeConfig({
+        Core: { description: "Core", scriptDirs: ["ts-defs"] },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.deepEqual(result, ["scripts/main.ts"]);
+    });
   });
 });
 
