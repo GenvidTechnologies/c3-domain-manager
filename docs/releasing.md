@@ -82,7 +82,7 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    npx -y @genvidtech/c3-domain-manager@X.Y.Z --version   # prints X.Y.Z, not "unknown"
    ```
 
-7. **File the downstream plugin update request.** The `genvid-c3` plugin
+7. **File the downstream plugin update request.** The `gvt-construct3` plugin
    (`GenvidTechnologies/claude-code-plugin-gvt-construct3`) **pins** this package in
    `plugin/.claude-plugin/plugin.json` (`mcpServers.c3-domain-manager`, e.g.
    `@genvidtech/c3-domain-manager@0.3.0`) and references the pinned version in its
