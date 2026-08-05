@@ -12,6 +12,8 @@ import {
   attributeFamily,
   extractExpressionReferences,
   isScriptAction,
+  isEditorLocalPath,
+  C3_TS_DEFS_FOLDER,
 } from "@genvidtech/c3source";
 import type {
   EventSheet,
@@ -136,6 +138,19 @@ export async function loadConfig(projectRoot: string, fileName: string): Promise
 /** Directories that are structural layers, not domain-relevant. Recurse into them. */
 const LAYER_DIRS = ["shared", "c3-runtime"];
 
+/**
+ * A directory under scripts/ worth reporting as a classifiable entry.
+ * Excludes C3-editor-local dirs (uistate/) — never project source, never a domain.
+ * ts-defs/ is the deliberate exemption: it IS editor-generated, but this tool keeps
+ * it walked and reported so a project can index its generated .d.ts files into a
+ * domain via scriptDirs (see docs/decisions/0013-*.md). A naive
+ * !isEditorLocalPath(name) would drop it, because EDITOR_LOCAL_EXCLUSIONS.dirs
+ * contains "ts-defs".
+ */
+function isReportableScriptDir(name: string): boolean {
+  return !isEditorLocalPath(name) || name === C3_TS_DEFS_FOLDER;
+}
+
 export function findScriptEntries(scriptsDir: string): Array<{ relativePath: string; isDirectory: boolean }> {
   const entries: Array<{ relativePath: string; isDirectory: boolean }> = [];
 
@@ -154,10 +169,12 @@ export function findScriptEntries(scriptsDir: string): Array<{ relativePath: str
         if (LAYER_DIRS.includes(name)) {
           // Recurse into layer dirs — enumerate their children instead
           scanDir(fullPath, `${prefix}${name}/`);
-        } else {
+        } else if (isReportableScriptDir(name)) {
           entries.push({ relativePath: `scripts/${prefix}${name}/`, isDirectory: true });
         }
       } else if (stats.isFile() && name.endsWith(".ts")) {
+        // No !isEditorLocalPath needed here: no editor-local name ends with ".ts"
+        // (*.uistate.json, tsconfig.json). Add it if that filter is ever relaxed.
         entries.push({ relativePath: `scripts/${prefix}${name}`, isDirectory: false });
       }
     }
