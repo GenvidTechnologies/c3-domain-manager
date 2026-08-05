@@ -10,6 +10,7 @@ import {
   extractEventVarDecls,
   extractEventVarRefs,
   extractExpressionRefs,
+  findScriptEntries,
 } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig, DomainData } from "../../src/domain/types.js";
 import type { EventSheet } from "@genvidtech/c3source";
@@ -1392,5 +1393,52 @@ describe("extractExpressionRefs", () => {
     const result = extractExpressionRefs(sheet);
 
     assert.deepEqual(result, []);
+  });
+});
+
+describe("findScriptEntries", () => {
+  let tmpDir: string;
+  let scriptsDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "findScriptEntries-"));
+    scriptsDir = path.join(tmpDir, "scripts");
+    fs.mkdirSync(scriptsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("does not report scripts/uistate/ as an entry", () => {
+    createFile(scriptsDir, "uistate/something.json");
+    createFile(scriptsDir, "main.ts");
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.isUndefined(result.find((entry) => entry.relativePath === "scripts/uistate/"));
+  });
+
+  // ts-defs/ is editor-local by c3source's own classifier too, but this tool
+  // deliberately keeps reporting it anyway — so a project can still index its
+  // generated .d.ts files into a domain via scriptDirs. A future "simplification"
+  // to a bare `!isEditorLocalPath(name)` check would silently break this: do not
+  // make this case red.
+  it("still reports scripts/ts-defs/ as an entry", () => {
+    createFile(scriptsDir, "ts-defs/objects.d.ts");
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.deepInclude(result, { relativePath: "scripts/ts-defs/", isDirectory: true });
+  });
+
+  it("does not report a nested uistate/ inside a layer dir, but a sibling dir at the same depth is still reported", () => {
+    createFile(scriptsDir, "shared/uistate/x.json");
+    createFile(scriptsDir, "shared/auth/svc.ts");
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.isUndefined(result.find((entry) => entry.relativePath === "scripts/shared/uistate/"));
+    assert.deepInclude(result, { relativePath: "scripts/shared/auth/", isDirectory: true });
   });
 });
