@@ -1,38 +1,47 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { openProject } from "@genvidtech/c3source";
+import {
+  openProject,
+  find_all_files_path,
+  isEditorLocalPath,
+  C3_TS_DEFS_FOLDER,
+} from "@genvidtech/c3source";
 import { classifyFile, VALID_PREFIXES } from "./classification.js";
 import type { DomainConfig } from "./types.js";
 
 /**
- * Recursively collect all files under a directory, returning paths relative to baseDir.
- * Returns an empty array if the directory doesn't exist.
+ * Recursively collect C3 *source* files under a directory, returning paths
+ * relative to baseDir (forward-slash — the form classifyFile/overrides require).
+ * Skips C3-editor-local artifacts (*.uistate.json, uistate/ dirs, tsconfig.json)
+ * via c3source's isEditorLocalPath — the single owner of that C3 platform fact.
+ * Returns an empty array if the directory doesn't exist (find_all_files_path
+ * throws ENOENT rather than tolerating an absent dir).
  */
-function collectFiles(dir: string, baseDir: string): string[] {
+function collectSourceFiles(dir: string, baseDir: string): string[] {
   if (!fs.existsSync(dir)) return [];
-  const results: string[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...collectFiles(fullPath, baseDir));
-    } else {
-      results.push(path.relative(baseDir, fullPath).replace(/\\/g, "/"));
-    }
-  }
-  return results;
+  return find_all_files_path(dir, (name) => !isEditorLocalPath(name)).map((p) =>
+    path.relative(baseDir, p).replace(/\\/g, "/"),
+  );
 }
 
 /**
- * Collect root-level .ts files in a directory (non-recursive).
- * Returns paths relative to baseDir.
+ * Collect root-level .ts files in a directory (non-recursive), returning paths
+ * relative to baseDir. `descend: () => false` expresses the non-recursion: the
+ * allowlisted script subdirs are walked separately below, and recursing here
+ * would both double-report them and pull in non-allowlisted subdirs.
+ *
+ * The .ts filter is load-bearing — real projects ship compiled .js next to .ts
+ * at the scripts/ root. Known accepted limitation: Construct 3 supports both
+ * .ts and .js scripts, so a JS-authored project's root scripts are invisible
+ * here. Broader .js support is tracked separately; do not widen this filter.
  */
 function collectRootTsFiles(dir: string, baseDir: string): string[] {
   if (!fs.existsSync(dir)) return [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  return entries
-    .filter((e) => e.isFile() && e.name.endsWith(".ts"))
-    .map((e) => path.relative(baseDir, path.join(dir, e.name)).replace(/\\/g, "/"));
+  return find_all_files_path(
+    dir,
+    (name) => name.endsWith(".ts") && !isEditorLocalPath(name),
+    () => false,
+  ).map((p) => path.relative(baseDir, p).replace(/\\/g, "/"));
 }
 
 /**
@@ -44,7 +53,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   const project = openProject(rootDir);
 
   // EventSheets
-  const eventSheetFiles = collectFiles(project.eventSheetsDir, rootDir);
+  const eventSheetFiles = collectSourceFiles(project.eventSheetsDir, rootDir);
   for (const file of eventSheetFiles) {
     if (classifyFile(file, "eventSheet", config) === null) {
       uncategorized.push(file);
@@ -52,7 +61,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Layouts
-  const layoutFiles = collectFiles(project.layoutsDir, rootDir);
+  const layoutFiles = collectSourceFiles(project.layoutsDir, rootDir);
   for (const file of layoutFiles) {
     if (classifyFile(file, "layout", config) === null) {
       uncategorized.push(file);
@@ -60,9 +69,11 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Scripts: walk shared/, c3-runtime/, common/, ts-defs/ + root-level .ts files
-  const scriptSubdirs = ["shared", "c3-runtime", "common", "ts-defs"];
+  // ts-defs/ is C3-generated but deliberately walked and reported: a project can
+  // index its generated .d.ts files into a domain via scriptDirs (see ADR 0013).
+  const scriptSubdirs = ["shared", "c3-runtime", "common", C3_TS_DEFS_FOLDER];
   for (const subdir of scriptSubdirs) {
-    const files = collectFiles(path.join(project.scriptsDir, subdir), rootDir);
+    const files = collectSourceFiles(path.join(project.scriptsDir, subdir), rootDir);
     for (const file of files) {
       if (classifyFile(file, "script", config) === null) {
         uncategorized.push(file);
@@ -79,7 +90,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Object types
-  const objectTypeFiles = collectFiles(project.objectTypesDir, rootDir);
+  const objectTypeFiles = collectSourceFiles(project.objectTypesDir, rootDir);
   for (const file of objectTypeFiles) {
     if (classifyFile(file, "objectType", config) === null) {
       uncategorized.push(file);
@@ -87,7 +98,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Families
-  const familyFiles = collectFiles(project.familiesDir, rootDir);
+  const familyFiles = collectSourceFiles(project.familiesDir, rootDir);
   for (const file of familyFiles) {
     if (classifyFile(file, "family", config) === null) {
       uncategorized.push(file);
