@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { computeAddonInventory, formatAddonInventoryReport } from "../../src/domain/addonInventory.js";
+import { fixtureProjectPath } from "../fixtureHelpers.js";
 
 /** Create a file (and its parent directories) in the temp dir. */
 function createFile(rootDir: string, relativePath: string, content: string): void {
@@ -185,5 +186,57 @@ describe("addonInventory", () => {
       assert.include(formatted, "1 declared-but-unused");
       assert.include(formatted, "1 used-but-undeclared");
     });
+  });
+});
+
+describe("computeAddonInventory — canonical fixture", () => {
+  // Runs against the real construct3-sample project materialized by `pretest`,
+  // rather than a synthetic manifest. Values below were captured by running the
+  // function, not derived by reading project.c3proj.
+  //
+  // No fixture-exists guard here on purpose: test/setup.ts asserts materialization
+  // once per run and throws. A per-test skip would hide missing coverage.
+  const root = fixtureProjectPath();
+
+  it("cross-references the real manifest against real object types", () => {
+    const report = computeAddonInventory(root, () => {});
+
+    assert.equal(report.declared.length, 13, "project.c3proj declares 13 addons");
+    assert.equal(report.attributions.length, 14, "12 object types + 2 families draw on addons");
+    assert.deepEqual(report.usedIds, [
+      "Button",
+      "Json",
+      "MyCompany_MyBehavior",
+      "MyCompany_MyEffect",
+      "NinePatch",
+      "Persist",
+      "Sprite",
+      "Text",
+      "TextBox",
+      "TiledBg",
+      "Tilemap",
+      "Timer",
+      "burn",
+    ]);
+  });
+
+  it("finds the canonical project internally consistent", () => {
+    const report = computeAddonInventory(root, () => {});
+
+    // Every declared addon is drawn on by something, and nothing draws on an
+    // undeclared one. This is a stronger claim than "does not crash": it is the
+    // property that makes the fixture a useful baseline, so a future pin bump
+    // that breaks it should fail here rather than silently widen the diff.
+    assert.deepEqual(report.declaredButUnused, [], "no declared addon goes unused");
+    assert.deepEqual(report.usedButUndeclared, [], "no addon is used without being declared");
+  });
+
+  it("attributes the two bundled custom addons", () => {
+    const report = computeAddonInventory(root, () => {});
+
+    // The bundled behavior and effect are the interesting case: they are
+    // project-local rather than Scirra built-ins.
+    assert.include(report.usedIds, "MyCompany_MyBehavior");
+    assert.include(report.usedIds, "MyCompany_MyEffect");
   });
 });

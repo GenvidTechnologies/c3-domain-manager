@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "../../src/domain/editorValidation.js";
 import type { DomainConfig } from "../../src/domain/types.js";
+import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 
 /** Create a minimal DomainConfig for testing. */
 function makeConfig(
@@ -340,5 +341,29 @@ describe("editorValidation", () => {
 
       assert.include(formatted, "Auth");
     });
+  });
+});
+
+describe("validateEditorStrictness — canonical fixture", () => {
+  // The canonical project is a real C3 editor export that passes upstream's own
+  // validate gate and a manual editor import, so it is the one input where
+  // "clean" is a meaningful expectation rather than an artefact of how the
+  // synthetic sheets above were built.
+  const root = fixtureProjectPath();
+
+  it("reports no editor-strictness issues", () => {
+    const report = validateEditorStrictness(root, FIXTURE_CONFIG, () => {});
+
+    assert.equal(report.totalIssues, 0);
+    assert.deepEqual(report.sheets, [], "no sheet contributes an issue group");
+  });
+
+  it("still reports clean when every sheet is unclassified", () => {
+    // Sheets are attributed via classifyFile, but validation does not depend on
+    // it — an unclassified sheet is still walked and reported under
+    // "(unclassified)". Passing an empty config proves the two are independent.
+    const report = validateEditorStrictness(root, { domains: {} }, () => {});
+
+    assert.equal(report.totalIssues, 0);
   });
 });

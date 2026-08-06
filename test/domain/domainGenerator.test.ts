@@ -13,6 +13,7 @@ import {
   findScriptEntries,
 } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig, DomainData } from "../../src/domain/types.js";
+import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 import type { EventSheet } from "@genvidtech/c3source";
 
 /** Create a file (and its parent directories) in the temp dir. */
@@ -1440,5 +1441,94 @@ describe("findScriptEntries", () => {
 
     assert.isUndefined(result.find((entry) => entry.relativePath === "scripts/shared/uistate/"));
     assert.deepInclude(result, { relativePath: "scripts/shared/auth/", isDirectory: true });
+  });
+});
+
+describe("computeDomainData — canonical fixture", () => {
+  const root = fixtureProjectPath();
+  const compute = () => computeDomainData(root, FIXTURE_CONFIG, () => {});
+  const byName = (name: string) => {
+    const d = compute().domains.find((x) => x.name === name);
+    assert.isDefined(d, `domain ${name} missing`);
+    return d!;
+  };
+  /** Drop empty entries so assertions read as "these edges exist, and only these". */
+  const edges = (m: Map<string, string[]>) => Object.fromEntries([...m.entries()].filter(([, v]) => v.length > 0));
+
+  it("classifies the fixture into Gameplay and UI", () => {
+    const { domains, unclassified } = compute();
+
+    assert.deepEqual(
+      domains.map((d) => d.name).sort(),
+      ["Gameplay", "UI"],
+    );
+    assert.deepEqual(unclassified, ["objectTypes/TextInput.json", "layouts/Templates Layout.json"]);
+  });
+
+  it("derives the cross-domain include edge", () => {
+    assert.deepEqual(edges(byName("Gameplay").includesFrom), { UI: ["Event sheet 2"] });
+    assert.deepEqual(edges(byName("UI").includedBy), { Gameplay: ["Event sheet 2"] });
+    assert.deepEqual(edges(byName("UI").includesFrom), {}, "UI includes nothing");
+  });
+
+  it("derives the cross-domain event-variable reference edge", () => {
+    // `score` is declared at the root of Gameplay's sheet and read from UI's.
+    assert.deepEqual(edges(byName("UI").referencesFrom), { Gameplay: ["score"] });
+    assert.deepEqual(edges(byName("Gameplay").referencedBy), { UI: ["score"] });
+  });
+
+  it("derives the cross-domain expression reference edge", () => {
+    // Gameplay's sheet reads Sprite2.X; Sprite2 lives in objectTypes/images/, which UI owns.
+    assert.deepEqual(edges(byName("Gameplay").expressionRefsFrom), { UI: ["Sprite2"] });
+    assert.deepEqual(edges(byName("UI").expressionRefsBy), { Gameplay: ["Sprite2"] });
+  });
+
+  it("leaves group-scoped and unresolvable references as non-edges", () => {
+    // `temp` and `isActive` are declared inside groups, so global-scope
+    // resolution never sees them; `Functions` is the System functions object and
+    // is never a classifiable object type. All three are referenced in the
+    // fixture and must produce no edge -- this is what keeps the unresolved
+    // path covered rather than accidentally exercised.
+    const g = byName("Gameplay");
+    const u = byName("UI");
+    for (const [name, m] of [
+      ["Gameplay.referencesFrom", g.referencesFrom],
+      ["UI.referencedBy", u.referencedBy],
+      ["UI.expressionRefsFrom", u.expressionRefsFrom],
+      ["Gameplay.expressionRefsBy", g.expressionRefsBy],
+    ] as const) {
+      assert.deepEqual(edges(m), {}, `${name} should have no edges`);
+    }
+  });
+
+  it("emits ts-defs as one classified directory entry, not one entry per file", () => {
+    // findScriptEntries does not recurse into ts-defs (it is not a LAYER_DIR),
+    // so the domain index carries a single directory entry. listUncategorized's
+    // separate walk does enumerate all 56 files -- two different code paths over
+    // the same directory, and asserting 56 entries here would be wrong.
+    const scripts = byName("Gameplay").scripts;
+
+    assert.deepEqual(scripts, [
+      { path: "scripts/importsForEvents.ts", isDirectory: false },
+      { path: "scripts/main.ts", isDirectory: false },
+      { path: "scripts/ts-defs/", isDirectory: true },
+    ]);
+  });
+
+  it("resolves layouts to their event sheets' domains", () => {
+    assert.deepEqual(byName("Gameplay").layouts, [
+      { path: "layouts/Gameplay/Main Layout.json", eventSheet: "Event sheet 1", eventSheetDomain: "Gameplay" },
+    ]);
+    assert.deepEqual(byName("UI").layouts, [
+      { path: "layouts/UI/Second Layout.json", eventSheet: "Event sheet 2", eventSheetDomain: "UI" },
+    ]);
+  });
+
+  it("extracts functions and custom ACEs from the real sheet", () => {
+    assert.deepEqual(
+      byName("Gameplay").functions.map((f) => f.name),
+      ["MyFunction", "MyAsyncFunction", "OnClickAction"],
+    );
+    assert.deepEqual(byName("UI").functions, [], "UI's sheet defines none");
   });
 });

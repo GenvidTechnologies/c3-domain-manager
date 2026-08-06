@@ -14,9 +14,12 @@ const originalLog = console.log;
 const originalDebug = console.debug;
 
 export const mochaHooks = {
-  // Note this is `before`, not `beforeEach` — the console stubs below are
-  // per-test, so anything logged from here still reaches stdout.
-  before() {
+  // `beforeAll`, not `before`: mocha's root-hook plugin API only recognises
+  // beforeAll/beforeEach/afterAll/afterEach. A `before` key here is silently
+  // ignored — the hook simply never runs, and the only symptom is that a
+  // missing fixture surfaces as a pile of raw ENOENTs instead of one actionable
+  // message. Verified by deleting the fixture and running mocha directly.
+  beforeAll() {
     assertFixtureMaterialized();
   },
   beforeEach() {
