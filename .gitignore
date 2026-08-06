@@ -6,3 +6,8 @@ tsconfig.tsbuildinfo
 
 # Local-only planning artifact (genvid-dev:plan-task)
 /plan.md
+
+# Materialized canonical fixture — built by scripts/prep-fixture.mjs from the
+# construct3-sample submodule. Generated, never committed: the canonical bytes
+# live upstream and are reproduced from the pinned commit on every `npm test`.
+/test/fixtures/canonical/

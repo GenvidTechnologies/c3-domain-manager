@@ -50,7 +50,11 @@
 	"scripts": {
 		"build": "tsc && node -e \"const fs=require('fs');const f='dist/cli.js';const c=fs.readFileSync(f,'utf8');if(!c.startsWith('#!')){fs.writeFileSync(f,'#!/usr/bin/env node\\n'+c)}\"",
 		"prepack": "npm run build",
+		"fixture:prep": "node scripts/prep-fixture.mjs",
+		"pretest": "npm run fixture:prep",
 		"test": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts 'test/**/*.test.ts' --exit",
+		"pretest:file": "npm run fixture:prep",
+		"test:file": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts --exit",
 		"lint": "eslint --ext .ts --max-warnings 0 src/ test/",
 		"typecheck": "tsc -p tsconfig.test.json --noEmit"
 	},
@@ -74,6 +78,7 @@
 		"chai": "^5.1.1",
 		"eslint": "^8.36.0",
 		"eslint-config-prettier": "^8.7.0",
+		"fflate": "^0.8.3",
 		"mocha": "^10.4.0",
 		"tsx": "^4.21.0",
 		"typescript": "^5.4.5"

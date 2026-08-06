@@ -11,6 +11,7 @@ import {
   validateOverrideValues,
 } from "../../src/domain/domainAnalysis.js";
 import type { DomainConfig } from "../../src/domain/types.js";
+import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 
 /** Create a minimal DomainConfig for testing. */
 function makeConfig(
@@ -365,4 +366,46 @@ describe("validateOverrideValues", () => {
     );
     assert.deepEqual(result, []);
   });
+});
+
+describe("listUncategorized — canonical fixture", () => {
+  const root = fixtureProjectPath();
+
+  it("reports exactly the two deliberately-unclassified files", () => {
+    const result = listUncategorized(root, FIXTURE_CONFIG);
+
+    assert.deepEqual(result, ["layouts/Templates Layout.json", "objectTypes/TextInput.json"]);
+  });
+
+  it("does not report scripts/tsconfig.json or any ts-defs declaration file", () => {
+    const result = listUncategorized(root, FIXTURE_CONFIG);
+
+    // Both are absent, but for different reasons, and the distinction is the
+    // point of ADR 0013:
+    //
+    //   tsconfig.json  never reaches classifyFile at all. The root-scripts walk
+    //                  filters to .ts, and isEditorLocalPath excludes it by name.
+    //   ts-defs/*.d.ts DO reach classifyFile -- all 56 of them, via the recursive
+    //                  walk -- and are classified into Gameplay by
+    //                  scriptDirs: ["ts-defs"]. They are absent because they were
+    //                  classified, not because they were dropped.
+    //
+    // The walked-not-dropped half is asserted positively in domainGenerator's
+    // fixture tests, where ts-defs/ shows up as a classified script entry. Here
+    // it could only be asserted as an absence, which would hold just as well if
+    // the walk had skipped the directory entirely.
+    assert.notInclude(result, "scripts/tsconfig.json");
+    assert.isFalse(
+      result.some((p) => p.startsWith("scripts/ts-defs/")),
+      "ts-defs files are classified into Gameplay, so none are uncategorized",
+    );
+  });
+
+  // Deliberately NOT asserted here: that no *.uistate.json or uistate/ path
+  // appears. The canonical project has never tracked any -- upstream gitignores
+  // them, because the editor rewrites them on every open and their content
+  // carries no signal -- so such an assertion would pass without exercising the
+  // exclusion at all, and would keep passing if the exclusion were deleted.
+  // That coverage belongs to the synthetic temp-dir tests above, which can
+  // actually construct the negative case.
 });

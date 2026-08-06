@@ -10,3 +10,8 @@ jobs:
     uses: GenvidTechnologies/public-github-actions/.github/workflows/node-gate.yml@main
     with:
       dry-run: true
+      # Recursive checkout inits the construct3-sample submodule, which the
+      # `pretest` hook materializes into the canonical test fixture. The shared
+      # gate checks out no submodules by default, so without this the fixture is
+      # absent and every fixture-backed test fails (#34).
+      submodules: recursive
