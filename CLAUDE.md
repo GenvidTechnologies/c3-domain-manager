@@ -14,12 +14,21 @@ Read `docs/domain-architecture.md` for the domain model concepts and the full `d
 
 ```bash
 npm run build       # tsc → dist/, then inject a #!/usr/bin/env node shebang into dist/cli.js
-npm test            # mocha + tsx over test/**/*.test.ts
+npm test            # pretest materializes the fixture, then mocha + tsx over test/**/*.test.ts
 npm run lint        # eslint, --max-warnings 0 (CI fails on any warning)
 npm run typecheck   # tsc -p tsconfig.test.json --noEmit (type-checks src AND test)
+npm run fixture:prep # rebuild test/fixtures/canonical/ from the construct3-sample submodule
 ```
 
-Run a single test file: `npx mocha --timeout 5000 --import=tsx --require ./test/setup.ts test/domain/health.test.ts --exit`
+Run a single test file: `npm run test:file -- test/domain/health.test.ts`
+
+**Use `test:file`, not `npm test -- <path>`, and not a bare `npx mocha`.** Two
+separate traps. First, mocha *merges* a positional path with the spec glob
+configured in the script rather than overriding it, so `npm test -- test/domain/health.test.ts`
+silently runs the **whole** suite. Second, `npm test`/`npm run test:file` fire a
+`pretest`/`pretest:file` hook that materializes the canonical fixture; invoking
+`npx mocha` directly skips it, and the fixture-backed tests then fail (loudly —
+see below).
 
 Note: both local development and CI use `npm` for these script names. CI runs the shared `public-github-actions` Node gate (`.github/workflows/ci.yml`).
 
@@ -87,6 +96,23 @@ ADRs are numbered chronologically and **self-indexed** in `docs/TOC.md` under `#
 ## Testing conventions
 
 Tests use mocha + chai (`assert`) and run through `tsx` (no build needed). `test/setup.ts` is a mocha root-hook plugin that silences `console.log`/`console.debug` during each test (leaving `warn`/`error`) — diagnostic logging in the core is passed in as a `log`/`Logger` callback, so prefer that over global console output. Tests live under `test/domain/` mirroring `src/domain/` — **with exceptions**: there is no `classification.test.ts`; `classifyFile` (from `src/domain/classification.ts`) is tested in `test/domain/domainFormatter.test.ts`. When touching a module, grep for its symbols across `test/domain/` rather than assuming a same-named test file.
+
+**Note `test/setup.ts` root hooks must be named `beforeAll`/`beforeEach`/`afterAll`/`afterEach`.** Mocha's root-hook plugin API recognises only those four; a `before` or `after` key is **silently ignored** — the hook never runs and nothing reports it. This is how the fixture guard below first shipped broken.
+
+### The canonical fixture
+
+Two kinds of test coexist in the same files. **Synthetic** tests build a C3 project in a per-test `fs.mkdtempSync` dir; **fixture-backed** tests (`describe("… — canonical fixture")`) run against the real `construct3-sample` project. Both are needed, and which to reach for is not a style preference:
+
+- **Fixture-backed** for "does this hold against a real C3 export" — the manifest, real event sheets, all three cross-domain coupling edges, the folder shapes.
+- **Synthetic** for anything requiring a **negative** case the fixture does not contain. The fixture tracks no `*.uistate.json` (upstream gitignores it — the editor rewrites it on every open, so its content is churn, not signal), so a fixture-backed "no uistate in the output" assertion would pass without exercising the exclusion, and would keep passing if the exclusion were deleted. **Never assert the absence of something the fixture never had.** See ADR 0014.
+
+`test/fixtures/construct3-sample` is a submodule pinned to a **tag** (currently `v1.0.0`); `scripts/prep-fixture.mjs` materializes it into the gitignored `test/fixtures/canonical/` via `git archive HEAD` + `fflate` (a **declared devDependency** — it also arrives transitively through `@genvidtech/c3source`, but relying on that would be a phantom dependency a future c3source change could remove silently), deleting and rebuilding each run, so the fixture is a pure function of the pinned commit and cannot pick up untracked or locally-modified bytes. CI checks the submodule out through the shared gate's `submodules: recursive` input — the prep script does **not** self-init.
+
+All fixture access goes through `test/fixtureHelpers.ts`: `fixtureProjectPath()`, `PROJECT_FIXTURE` (the single swap point — no test builds a fixture path itself), `FIXTURE_CONFIG` (the domain config, held in memory so the fixture stays byte-identical to canonical), and `assertFixtureMaterialized()`, which **throws** from a root `beforeAll` rather than letting tests skip. Per-test `if (!exists) this.skip()` guards are banned: a skip turns a missing fixture into a passing suite, and mocha renders a permanently-skipped test identically to an intentionally pending one.
+
+**`test/fixtures/` is excluded from lint and typecheck** (`.eslintrc.cjs` `ignorePatterns`, `tsconfig.test.json` `exclude`) — the fixture ships 56 `ts-defs/*.d.ts` using `var`/`Function`, which the rules forbid at `--max-warnings 0`. CI runs lint and typecheck *before* test, so without these a clean first run passes and every cached run fails. Do not remove them.
+
+**Bumping the pin:** update the gitlink → `npm run fixture:prep` → **re-capture** every fixture-backed assertion by running the real functions. Those values were measured, not derived; adjusting them to make tests pass would defeat the point. No manual C3-editor checkpoint is needed here (that belongs to *producing* a `construct3-sample` release — this repo is read-only and inherits load validity from the tag).
 
 **Extending `DomainData` has a test-helper fan-out cost.** Five test files — `formatting.test.ts`, `contextMap.test.ts`, `relationships.test.ts`, `domainFormatter.test.ts`, `health.test.ts` — each hand-roll a `makeDomain(name, opts?)` helper whose returned literal enumerates **every** `DomainData` field (no spread from a real `computeDomainData` call). Adding a **non-optional** field to `DomainData` (`src/domain/types.ts`) breaks `tsc` in all five until each helper's literal is updated (the mechanical fix is one line per file, e.g. `addons: opts?.addons ?? [],`). Enumerate all five when planning such a change — this bit the issue #26 addon-attribution work, and issue #28 (expression-reference coupling) then added a third coupling-edge map pair (`expressionRefsFrom`/`expressionRefsBy`) to `DomainData`, hitting all five helpers exactly as predicted.
 
