@@ -1,0 +1,3 @@
+[submodule "test/fixtures/construct3-sample"]
+	path = test/fixtures/construct3-sample
+	url = git@github.com:GenvidTechnologies/construct3-sample.git
