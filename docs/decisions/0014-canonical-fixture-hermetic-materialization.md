@@ -144,9 +144,22 @@ that contract forbids.
 
 **Why `v1.0.0` and not a minor bump.** Upstream's semver rule makes **major** a
 structural change that forces consumers to update their overlay or strip-list.
-Foldering moves every event-sheet and layout path, so `construct3-chef` must
-regenerate its 12-file `extracted/` golden before it can bump. A minor tag would
-have signalled that bumping was free.
+
+Note the sample itself carries no read surface — an `extracted/` rendering is a
+*consumer's* artifact, which its ADR 0001 explicitly places outside canonical
+scope. `construct3-chef` generates and commits its own under
+`test/fixtures/construct3-chef-sample/extracted/`, and regenerating it is a
+documented step in **every** chef pin bump. So "chef regenerates its golden" is
+not by itself evidence of a breaking change.
+
+What makes this one breaking is that the generated paths **move**. chef derives
+each output path from the sheet's path relative to `eventSheets/`
+(`src/c3/generators.ts`: `path.join(outDir, "eventSheets", relPath…)`), so
+foldering turns `extracted/eventSheets/Event sheet 1.dsl.txt` into
+`extracted/eventSheets/Gameplay/Event sheet 1.dsl.txt`. chef's committed golden
+set is therefore *restructured* — old paths deleted, new ones added — rather
+than refreshed in place, which is squarely the "update their overlay" case.
+A minor tag would have signalled that bumping was a content refresh.
 
 **Why siblings are not broken by it.** Verified, not assumed: `c3source` and
 `construct3-chef` both pin `construct3-sample` at commit `b1ee72d1ee` via a
