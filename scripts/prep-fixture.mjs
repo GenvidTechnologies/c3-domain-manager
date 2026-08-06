@@ -75,11 +75,19 @@ const archive = execFileSync("git", ["-C", sourceRepo, "archive", "--format=zip"
 });
 
 const entries = unzipSync(new Uint8Array(archive));
+const outputPrefix = path.resolve(outputDir) + path.sep;
 let count = 0;
 for (const [name, bytes] of Object.entries(entries)) {
   if (name.endsWith("/")) continue; // zip directory entry
   const rel = name.replace(/^project\//, "");
-  const dest = path.join(outputDir, rel);
+  const dest = path.resolve(outputDir, rel);
+  // Containment check. `git archive` cannot emit a path escaping the tree, so
+  // this should be unreachable — but this loop writes to the filesystem from
+  // archive-supplied names, and "should be unreachable" is a bad reason to
+  // skip the check on a write path.
+  if (!dest.startsWith(outputPrefix)) {
+    fail(`archive entry escapes the output directory: ${name}`);
+  }
   mkdirSync(path.dirname(dest), { recursive: true });
   // Written byte-for-byte — never re-serialized. The C3 export's exact bytes
   // (tab indentation, no trailing newline) are what the fixture asserts against.
