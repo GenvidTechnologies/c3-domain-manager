@@ -228,4 +228,26 @@ describe("authored-script rule — both surfaces (issue #39)", () => {
       .map((e) => e.relativePath);
     assert.notInclude(entries, "scripts/shared/data.json");
   });
+
+  // Pinned divergence C, tracked by issue #46, deliberately out of scope for
+  // issue #39: listUncategorized's scriptSubdirs walk only ever descends into
+  // a four-entry allowlist of scripts/ subdirectories ("shared",
+  // "c3-runtime", "common", C3_TS_DEFS_FOLDER) plus the scripts/ root itself.
+  // findScriptEntries walks the whole scripts/ tree and, for any other
+  // reportable directory, emits a directory entry for it. ADR 0013 explicitly
+  // declined to touch the allowlist ("zero observed corpus impact...
+  // explicitly pinned by existing tests"), so scripts/other/ falls outside
+  // listUncategorized's walk entirely while findScriptEntries still reports
+  // it. This is not an extension problem — it would diverge identically in a
+  // project containing no .js at all — which is what distinguishes it from
+  // what #39 fixed.
+  it("pinned divergence C (issue #46) — a non-allowlisted scripts/ subdirectory is reported by findScriptEntries but not listUncategorized", () => {
+    createFile(tmpDir, "scripts/other/o.ts");
+
+    const entries = findScriptEntries(scriptsDir);
+    assert.deepInclude(entries, { relativePath: "scripts/other/", isDirectory: true });
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.isFalse(uncategorized.some((p) => p.startsWith("scripts/other/")));
+  });
 });
