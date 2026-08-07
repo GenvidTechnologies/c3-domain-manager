@@ -2,21 +2,20 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "../../src/domain/editorValidation.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
-import { createFile } from "../syntheticProject.js";
+import { createFile, makeTempDir, removeTempDir } from "../syntheticProject.js";
 import { makeConfig } from "../domainModel.js";
 
 describe("editorValidation", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "editorValidation-"));
+    tmpDir = makeTempDir("editorValidation-");
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   describe("validateEditorStrictness", () => {

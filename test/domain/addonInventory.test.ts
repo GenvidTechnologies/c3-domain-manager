@@ -2,10 +2,9 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { computeAddonInventory, formatAddonInventoryReport } from "../../src/domain/addonInventory.js";
 import { fixtureProjectPath } from "../fixtureHelpers.js";
-import { createFile, makeObjectType, makeFamily } from "../syntheticProject.js";
+import { createFile, makeObjectType, makeFamily, makeTempDir, removeTempDir } from "../syntheticProject.js";
 
 /**
  * Build a minimal-but-valid C3ProjectManifest JSON string, with the given
@@ -46,11 +45,11 @@ describe("addonInventory", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "addonInventory-"));
+    tmpDir = makeTempDir("addonInventory-");
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   describe("computeAddonInventory", () => {

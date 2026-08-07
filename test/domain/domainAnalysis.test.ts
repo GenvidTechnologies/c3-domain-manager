@@ -2,7 +2,6 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import {
   listUncategorized,
   listStaleOverrides,
@@ -12,18 +11,18 @@ import {
 } from "../../src/domain/domainAnalysis.js";
 import type { DomainConfig } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
-import { createFile } from "../syntheticProject.js";
+import { createFile, makeTempDir, removeTempDir } from "../syntheticProject.js";
 import { makeConfig } from "../domainModel.js";
 
 describe("domainAnalysis", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "domainAnalysis-"));
+    tmpDir = makeTempDir("domainAnalysis-");
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   describe("listStaleOverrides", () => {
