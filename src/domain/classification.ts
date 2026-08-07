@@ -74,3 +74,41 @@ export function classifyFile(
 
   return bestMatch;
 }
+
+/**
+ * Script source extensions. Construct 3 supports both; which one C3 *loads* is a
+ * function of the editor release (r39700 projects declare the compiled .js in
+ * project.c3proj, r47604+ declare the .ts). This tool maps *authored source*, so
+ * it admits both and disambiguates a .ts/.js pair with isCompiledSibling. ADR 0016.
+ *
+ * PLATFORM FACT, TEMPORARILY LOCAL: c3source owns C3 platform facts, but 1.9.0
+ * exports no script-extension constant (findAllScripts hardcodes .ts and excludes
+ * .d.ts). Re-check on the next c3source bump; upstream issue filed.
+ */
+export const SCRIPT_SOURCE_EXTENSIONS = [".ts", ".js"] as const;
+
+/** Clause 2 — extension admission. Takes a bare basename, the form
+ *  find_all_files_path's predicate receives (no directory context available there). */
+export function isScriptSourceName(name: string): boolean {
+  return SCRIPT_SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/**
+ * Clause 1 — compiled-sibling suppression. True when `name` is a .js whose
+ * same-basename .ts sibling exists in the same directory: it is tsc output of a
+ * file we already report (or is indistinguishable from it — see ADR 0016's
+ * compromise on hand-edited output).
+ *
+ * Pure by construction: takes the sibling basenames rather than touching the
+ * filesystem, so both walk sites feed it a listing they already have and the
+ * rule is unit-testable with no temp dir.
+ *
+ * `siblingNames` MUST be scoped to ONE directory. A set spanning directories
+ * would let scripts/shared/a.ts suppress scripts/common/a.js.
+ *
+ * Note `.d.ts` is deliberately NOT a suppressor: Player.d.ts is a declaration,
+ * not the authored source of Player.js, so Player.js stays reported.
+ */
+export function isCompiledSibling(name: string, siblingNames: ReadonlySet<string>): boolean {
+  return name.endsWith(".js") && siblingNames.has(name.slice(0, -".js".length) + ".ts");
+}
