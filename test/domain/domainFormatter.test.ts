@@ -6,7 +6,7 @@ import { extractIncludes } from "@genvidtech/c3source";
 import type { EventSheet, EventSheetEvent } from "@genvidtech/c3source";
 import { formatDomainIndex, formatDomainPage } from "../../src/domain/formatting.js";
 import type { DomainConfig, FunctionDef } from "../../src/domain/types.js";
-import { makeDomain } from "../domainModel.js";
+import { makeDomain, makeConfig } from "../domainModel.js";
 
 /** Wrap a fixture event array into a minimal EventSheet for the c3source extractors. */
 function makeSheet(name: string, events: unknown[]): EventSheet {
@@ -16,11 +16,6 @@ function makeSheet(name: string, events: unknown[]): EventSheet {
 /** Included sheet names for a fixture event array, via c3source's extractIncludes. */
 function includeNames(events: unknown[]): string[] {
   return extractIncludes(makeSheet("Fixture", events)).map((r) => r.includeSheet);
-}
-
-/** Helper to create a minimal DomainConfig. */
-function makeConfig(domains: DomainConfig["domains"], overrides?: DomainConfig["overrides"]): DomainConfig {
-  return { domains, overrides };
 }
 
 describe("domainFormatter", () => {
@@ -33,7 +28,7 @@ describe("domainFormatter", () => {
             eventSheetDirs: ["Login"],
           },
         },
-        { "eventSheets/Login/SpecialEvents.json": "SpecialDomain" },
+        { overrides: { "eventSheets/Login/SpecialEvents.json": "SpecialDomain" } },
       );
       const result = classifyFile("eventSheets/Login/SpecialEvents.json", "eventSheet", config);
       assert.equal(result, "SpecialDomain");

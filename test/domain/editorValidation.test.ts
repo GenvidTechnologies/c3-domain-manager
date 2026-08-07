@@ -4,18 +4,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "../../src/domain/editorValidation.js";
-import type { DomainConfig } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 import { createFile } from "../syntheticProject.js";
-
-/** Create a minimal DomainConfig for testing. */
-function makeConfig(
-  domains: DomainConfig["domains"],
-  overrides?: DomainConfig["overrides"],
-  sharedSubdomains?: DomainConfig["sharedSubdomains"],
-): DomainConfig {
-  return { domains, overrides, sharedSubdomains };
-}
+import { makeConfig } from "../domainModel.js";
 
 describe("editorValidation", () => {
   let tmpDir: string;

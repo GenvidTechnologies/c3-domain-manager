@@ -13,15 +13,7 @@ import {
 import type { DomainConfig } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 import { createFile } from "../syntheticProject.js";
-
-/** Create a minimal DomainConfig for testing. */
-function makeConfig(
-  domains: DomainConfig["domains"],
-  overrides?: DomainConfig["overrides"],
-  sharedSubdomains?: DomainConfig["sharedSubdomains"],
-): DomainConfig {
-  return { domains, overrides, sharedSubdomains };
-}
+import { makeConfig } from "../domainModel.js";
 
 describe("domainAnalysis", () => {
   let tmpDir: string;
@@ -42,8 +34,10 @@ describe("domainAnalysis", () => {
       const config = makeConfig(
         { Auth: { description: "Auth", eventSheetDirs: ["Login"] } },
         {
-          "eventSheets/Login/LoginEvents.json": "Auth",
-          "layouts/Main/MainLayout.json": "Navigation",
+          overrides: {
+            "eventSheets/Login/LoginEvents.json": "Auth",
+            "layouts/Main/MainLayout.json": "Navigation",
+          },
         },
       );
 
@@ -57,9 +51,11 @@ describe("domainAnalysis", () => {
       const config = makeConfig(
         { Auth: { description: "Auth" } },
         {
-          "eventSheets/Login/LoginEvents.json": "Auth",
-          "eventSheets/Deleted/OldSheet.json": "Legacy",
-          "layouts/Missing/Layout.json": "Gone",
+          overrides: {
+            "eventSheets/Login/LoginEvents.json": "Auth",
+            "eventSheets/Deleted/OldSheet.json": "Legacy",
+            "layouts/Missing/Layout.json": "Gone",
+          },
         },
       );
 
@@ -124,7 +120,10 @@ describe("domainAnalysis", () => {
     it("classifies files via overrides", () => {
       createFile(tmpDir, "eventSheets/Misc/SpecialEvents.json");
 
-      const config = makeConfig({ Auth: { description: "Auth" } }, { "eventSheets/Misc/SpecialEvents.json": "Auth" });
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "eventSheets/Misc/SpecialEvents.json": "Auth" } },
+      );
 
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, []);
@@ -133,12 +132,17 @@ describe("domainAnalysis", () => {
     it("classifies files via shared subdomains", () => {
       createFile(tmpDir, "eventSheets/Chat/ChatEvents.json");
 
-      const config = makeConfig({ Auth: { description: "Auth" } }, undefined, {
-        Chat: {
-          description: "Chat system",
-          eventSheetDirs: ["Chat"],
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          sharedSubdomains: {
+            Chat: {
+              description: "Chat system",
+              eventSheetDirs: ["Chat"],
+            },
+          },
         },
-      });
+      );
 
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, []);

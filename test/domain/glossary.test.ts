@@ -1,14 +1,7 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { collectGlossary, findCollisions, formatGlossaryReport } from "../../src/domain/glossary.js";
-import type { DomainConfig } from "../../src/domain/types.js";
-
-function makeConfig(
-  domains: DomainConfig["domains"],
-  sharedSubdomains?: DomainConfig["sharedSubdomains"],
-): DomainConfig {
-  return { domains, sharedSubdomains };
-}
+import { makeConfig } from "../domainModel.js";
 
 describe("glossary", () => {
   describe("collectGlossary", () => {
@@ -40,7 +33,7 @@ describe("glossary", () => {
     it("collects entries from sharedSubdomains", () => {
       const config = makeConfig(
         { Auth: { description: "Authentication" } },
-        { Shared: { description: "Shared", glossary: { Token: "An auth token" } } },
+        { sharedSubdomains: { Shared: { description: "Shared", glossary: { Token: "An auth token" } } } },
       );
       const entries = collectGlossary(config);
       assert.equal(entries.length, 1);
@@ -50,7 +43,7 @@ describe("glossary", () => {
     it("collects entries from both domains and sharedSubdomains", () => {
       const config = makeConfig(
         { Auth: { description: "Authentication", glossary: { Hero: "A playable character" } } },
-        { Shared: { description: "Shared", glossary: { Token: "An auth token" } } },
+        { sharedSubdomains: { Shared: { description: "Shared", glossary: { Token: "An auth token" } } } },
       );
       const entries = collectGlossary(config);
       assert.equal(entries.length, 2);
