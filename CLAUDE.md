@@ -36,6 +36,67 @@ Note: both local development and CI use `npm` for these script names. CI runs th
 
 **Cutting a release:** see `docs/releasing.md`. In short — bump the version in `package.json` + `package-lock.json`, commit `chore: Release X.Y.Z`, push a lightweight `vX.Y.Z` tag; the tag push triggers `.github/workflows/publish.yml` (OIDC trusted publish to npm).
 
+## Branching
+
+Base branch is `main`. Feature branches are `<type>/<issue-number>-<kebab-slug>`, where `<type>` is the conventional-commit type the work will land under:
+
+```
+test/34-construct3-sample-fixture
+fix/33-editor-local-exclusion-uncategorized
+feat/30-hub-coupling-discount
+docs/42-claude-md-contract-sections
+```
+
+**The `<type>/` prefix and the issue number are both load-bearing** — a few pre-#16 branches omit the number (`feat/project-dir-source-root`), but every recent one carries it. Inferring the shape from `git log` alone gets this wrong: branch names survive only in PR metadata after a squash merge, so `main`'s history shows none of them. This is exactly how issue #38's branch was first created as `38-consolidate-test-helpers`, missing the prefix.
+
+PRs are **squash-merged**, so the branch's individual commits do not reach `main` — one PR becomes one commit. Rebase onto `main` rather than merging into the branch.
+
+## Commit Format
+
+Conventional-commit type, colon, then a **capitalized** description:
+
+```
+<type>: <Description>
+<type>: <Description> (#<issue>)
+```
+
+Types in use: `feat`, `fix`, `test`, `docs`, `chore`. The issue reference is optional in the subject and appears on roughly half of merged work; when present it goes at the end. GitHub's squash merge appends the PR number, so `main` ends up carrying both — issue first, PR appended:
+
+```
+fix: Exclude C3-editor-local artifacts from list-uncategorized (#33) (#40)
+```
+
+Bodies are welcome and used freely on branch commits — they are the natural place to record *why* a mechanism was chosen, and what was verified. They do not survive the squash, so anything that must outlive the branch belongs in an ADR or in this file, not only in a commit message.
+
+## Pull Request Format
+
+Title matches the intended squash subject (same conventional-commit shape as above). Body structure, consistent across recent PRs:
+
+```markdown
+## Summary
+- Bullets with **bolded lead phrases**. State what changed, and what a reviewer
+  should be skeptical about — not just an inventory.
+
+Closes #<issue>
+
+## Where the issue was wrong
+Optional. Used when implementation reconciled a premise the issue got wrong;
+the issue body gets annotated too, with its original text preserved.
+
+## Changes
+### <Area>   ← Core / Tests / Docs / Fixture plumbing / Guards …
+
+## Notes for reviewers
+Optional. Cross-repo dependencies, pushed upstream tags, things that will look
+surprising in the diff.
+```
+
+`Closes #<issue>` is what links the PR to its issue — without it a merged PR leaves its issue open indefinitely, and already-shipped work resurfaces as plannable backlog.
+
+## Agent Dispatch Guide
+
+**Deliberately absent, and should stay that way.** `CONVENTIONS.md` lists this section so `/gvt-dev:plan-task` can dispatch a domain-specific recon agent; omitting it falls back to `gvt-dev:analyst`, which is the correct choice here. This repo is TypeScript tooling that *analyzes* Construct 3 projects — it is not itself a C3 project, has no `project.c3proj`, and the `gvt-construct3` explorer's MCP tools have nothing here to read. The absence is a decision, not a gap.
+
 ## Key dependencies
 
 **Bumping either dependency is a two-place change: `package.json` *and* the stated floor in this file.** The floors below are documentation, so they drift silently — a bump that updates only `package.json` leaves this file asserting a version the code no longer requires (caught by code review in issue #33, after the fact). Update both in the same commit, and add the adoption to the "When bumping …" chain below so the *reason* the new floor is load-bearing is recorded, not just the number.
