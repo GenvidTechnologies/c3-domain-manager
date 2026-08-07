@@ -2,16 +2,9 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { computeAddonInventory, formatAddonInventoryReport } from "../../src/domain/addonInventory.js";
 import { fixtureProjectPath } from "../fixtureHelpers.js";
-
-/** Create a file (and its parent directories) in the temp dir. */
-function createFile(rootDir: string, relativePath: string, content: string): void {
-  const fullPath = path.join(rootDir, relativePath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, content);
-}
+import { createFile, makeObjectType, makeFamily, makeTempDir, removeTempDir } from "../syntheticProject.js";
 
 /**
  * Build a minimal-but-valid C3ProjectManifest JSON string, with the given
@@ -48,44 +41,15 @@ function makeMinimalManifest(usedAddons: unknown[]): string {
   });
 }
 
-function makeObjectType(name: string, pluginId: string, behaviorIds: string[] = [], effectIds: string[] = []): string {
-  return JSON.stringify({
-    name,
-    "plugin-id": pluginId,
-    sid: 1,
-    instanceVariables: [],
-    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
-    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
-  });
-}
-
-function makeFamily(
-  name: string,
-  pluginId: string,
-  members: string[],
-  behaviorIds: string[] = [],
-  effectIds: string[] = [],
-): string {
-  return JSON.stringify({
-    name,
-    "plugin-id": pluginId,
-    sid: 1,
-    instanceVariables: [],
-    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
-    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
-    members,
-  });
-}
-
 describe("addonInventory", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "addonInventory-"));
+    tmpDir = makeTempDir("addonInventory-");
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   describe("computeAddonInventory", () => {

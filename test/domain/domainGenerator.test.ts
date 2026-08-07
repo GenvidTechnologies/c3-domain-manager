@@ -2,7 +2,6 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import {
   computeDomainData,
   loadConfig,
@@ -14,14 +13,8 @@ import {
 } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig, DomainData } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
+import { createFile, makeObjectType, makeFamily, makeTempDir, removeTempDir } from "../syntheticProject.js";
 import type { EventSheet } from "@genvidtech/c3source";
-
-/** Create a file (and its parent directories) in the temp dir. */
-function createFile(rootDir: string, relativePath: string, content = ""): void {
-  const fullPath = path.join(rootDir, relativePath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, content);
-}
 
 /** Create a minimal valid eventSheet JSON file. */
 function eventSheetJson(name: string): string {
@@ -33,42 +26,11 @@ function layoutJson(name: string, eventSheet = ""): string {
   return JSON.stringify({ name, layers: [], eventSheet });
 }
 
-/** Create a minimal valid ObjectType JSON file (shape mirrors addonInventory.test.ts). */
-function makeObjectType(name: string, pluginId: string, behaviorIds: string[] = [], effectIds: string[] = []): string {
-  return JSON.stringify({
-    name,
-    "plugin-id": pluginId,
-    sid: 1,
-    instanceVariables: [],
-    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
-    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
-  });
-}
-
-/** Create a minimal valid Family JSON file (shape mirrors addonInventory.test.ts). */
-function makeFamily(
-  name: string,
-  pluginId: string,
-  members: string[],
-  behaviorIds: string[] = [],
-  effectIds: string[] = [],
-): string {
-  return JSON.stringify({
-    name,
-    "plugin-id": pluginId,
-    sid: 1,
-    instanceVariables: [],
-    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
-    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
-    members,
-  });
-}
-
 describe("computeDomainData", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "domainGenerator-"));
+    tmpDir = makeTempDir("domainGenerator-");
     // Create required directories so find functions don't throw
     fs.mkdirSync(path.join(tmpDir, "eventSheets"), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, "layouts"), { recursive: true });
@@ -76,7 +38,7 @@ describe("computeDomainData", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   it("classifies an eventSheet into the correct domain", () => {
@@ -790,7 +752,7 @@ describe("generateDomainIndex", () => {
   }
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "generateDomainIndex-"));
+    tmpDir = makeTempDir("generateDomainIndex-");
     outDir = path.join(tmpDir, "extracted");
 
     // Core declares an eventSheet; UI includes it — a hub coupling edge to discount.
@@ -807,7 +769,7 @@ describe("generateDomainIndex", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   it("discounts a hub domain end-to-end: excluded from the index Dependencies column, tagged on the detail page", async () => {
@@ -896,11 +858,11 @@ describe("loadConfig", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loadConfig-"));
+    tmpDir = makeTempDir("loadConfig-");
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   // R3: unknown keys at top level and inside a domain def are preserved (.passthrough())
@@ -1402,13 +1364,13 @@ describe("findScriptEntries", () => {
   let scriptsDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "findScriptEntries-"));
+    tmpDir = makeTempDir("findScriptEntries-");
     scriptsDir = path.join(tmpDir, "scripts");
     fs.mkdirSync(scriptsDir, { recursive: true });
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   it("does not report scripts/uistate/ as an entry", () => {

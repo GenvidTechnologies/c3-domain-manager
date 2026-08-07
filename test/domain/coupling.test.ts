@@ -5,72 +5,43 @@ import { computeHealth } from "../../src/domain/health.js";
 import { validateBoundaries } from "../../src/domain/relationships.js";
 import { generateContextMap } from "../../src/domain/contextMap.js";
 import { formatDomainIndex, formatDomainPage } from "../../src/domain/formatting.js";
-import type { DomainConfig, DomainData } from "../../src/domain/types.js";
-
-function makeDomain(name: string, isSharedSubdomain?: boolean): DomainData {
-  return {
-    name,
-    description: "",
-    eventSheets: [],
-    layouts: [],
-    scripts: [],
-    functions: [],
-    includesFrom: new Map(),
-    includedBy: new Map(),
-    referencesFrom: new Map(),
-    referencedBy: new Map(),
-    expressionRefsFrom: new Map(),
-    expressionRefsBy: new Map(),
-    addons: [],
-    isSharedSubdomain,
-  };
-}
-
-function makeDomainOpts(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-    strategy: opts?.strategy,
-    isSharedSubdomain: opts?.isSharedSubdomain,
-  };
-}
+import type { DomainConfig } from "../../src/domain/types.js";
+import { makeDomain } from "../domainModel.js";
 
 describe("coupling", () => {
   describe("computeHubDomains", () => {
     it("returns an empty set when config.coupling is absent", () => {
-      const domains = [makeDomain("A"), makeDomain("B", true)];
+      const domains = [makeDomain("A"), makeDomain("B", { isSharedSubdomain: true })];
       const config: DomainConfig = { domains: {} };
       const hubs = computeHubDomains(domains, config);
       assert.equal(hubs.size, 0);
     });
 
     it("returns exactly the shared-subdomain names when discountSharedKernel is true", () => {
-      const domains = [makeDomain("A"), makeDomain("Kernel1", true), makeDomain("B"), makeDomain("Kernel2", true)];
+      const domains = [
+        makeDomain("A"),
+        makeDomain("Kernel1", { isSharedSubdomain: true }),
+        makeDomain("B"),
+        makeDomain("Kernel2", { isSharedSubdomain: true }),
+      ];
       const config: DomainConfig = { domains: {}, coupling: { discountSharedKernel: true } };
       const hubs = computeHubDomains(domains, config);
       assert.deepEqual([...hubs].sort(), ["Kernel1", "Kernel2"]);
     });
 
     it("returns exactly the explicit hubDomains when discountSharedKernel is false/absent", () => {
-      const domains = [makeDomain("A"), makeDomain("Kernel1", true)];
+      const domains = [makeDomain("A"), makeDomain("Kernel1", { isSharedSubdomain: true })];
       const config: DomainConfig = { domains: {}, coupling: { hubDomains: ["X", "Y"] } };
       const hubs = computeHubDomains(domains, config);
       assert.deepEqual([...hubs].sort(), ["X", "Y"]);
     });
 
     it("unions shared-subdomain names and explicit hubDomains, deduped", () => {
-      const domains = [makeDomain("Kernel1", true), makeDomain("Kernel2", true), makeDomain("A")];
+      const domains = [
+        makeDomain("Kernel1", { isSharedSubdomain: true }),
+        makeDomain("Kernel2", { isSharedSubdomain: true }),
+        makeDomain("A"),
+      ];
       const config: DomainConfig = {
         domains: {},
         coupling: { discountSharedKernel: true, hubDomains: ["Kernel2", "Z"] },
@@ -121,12 +92,12 @@ describe("coupling", () => {
     // discounted via config.coupling.discountSharedKernel). Feature is a supporting
     // domain with an OBSERVED (includesFrom) edge to Core, and no declared relationship
     // between them — so the undeclared-vs-forbidden asymmetry is exercised on the same edge.
-    const core = makeDomainOpts("Core", {
+    const core = makeDomain("Core", {
       strategy: "core",
       isSharedSubdomain: true,
       includedBy: new Map([["Feature", ["Core/Sheet.json"]]]),
     });
-    const feature = makeDomainOpts("Feature", {
+    const feature = makeDomain("Feature", {
       strategy: "supporting",
       includesFrom: new Map([["Core", ["Core/Sheet.json"]]]),
     });

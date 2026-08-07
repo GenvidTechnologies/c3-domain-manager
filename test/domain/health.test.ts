@@ -1,25 +1,7 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { computeHealth, formatHealthReport } from "../../src/domain/health.js";
-import type { DomainData } from "../../src/domain/types.js";
-
-function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-  };
-}
+import { makeDomain } from "../domainModel.js";
 
 describe("health", () => {
   describe("computeHealth", () => {

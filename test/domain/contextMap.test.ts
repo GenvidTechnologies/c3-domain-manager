@@ -1,29 +1,8 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { generateContextMap } from "../../src/domain/contextMap.js";
-import type { DomainData, DomainConfig } from "../../src/domain/types.js";
-
-function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-  };
-}
-
-function makeConfig(relationships?: DomainConfig["relationships"]): DomainConfig {
-  return { domains: {}, relationships };
-}
+import type { DomainConfig } from "../../src/domain/types.js";
+import { makeDomain, makeConfig } from "../domainModel.js";
 
 describe("contextMap", () => {
   describe("generateContextMap - mermaid format", () => {
@@ -37,7 +16,7 @@ describe("contextMap", () => {
         makeDomain("Authentication"),
         makeDomain("Shop"),
       ];
-      const config = makeConfig([{ from: "Authentication", to: "Shop", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Authentication", to: "Shop", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "mermaid" });
       assert.include(result, "graph LR");
       assert.include(result, '-->|C/S|');
@@ -47,28 +26,28 @@ describe("contextMap", () => {
 
     it("shared-kernel relationship → ==SK==>", () => {
       const domains = [makeDomain("A"), makeDomain("B")];
-      const config = makeConfig([{ from: "A", to: "B", type: "shared-kernel" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "shared-kernel" }] });
       const result = generateContextMap(domains, config, { format: "mermaid" });
       assert.include(result, "==SK==>");
     });
 
     it("conformist relationship → -->|CF|", () => {
       const domains = [makeDomain("A"), makeDomain("B")];
-      const config = makeConfig([{ from: "A", to: "B", type: "conformist" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "conformist" }] });
       const result = generateContextMap(domains, config, { format: "mermaid" });
       assert.include(result, "-->|CF|");
     });
 
     it("anti-corruption-layer relationship → -->|ACL|", () => {
       const domains = [makeDomain("A"), makeDomain("B")];
-      const config = makeConfig([{ from: "A", to: "B", type: "anti-corruption-layer" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "anti-corruption-layer" }] });
       const result = generateContextMap(domains, config, { format: "mermaid" });
       assert.include(result, "-->|ACL|");
     });
 
     it("open-host-service relationship → -->|OHS|", () => {
       const domains = [makeDomain("A"), makeDomain("B")];
-      const config = makeConfig([{ from: "A", to: "B", type: "open-host-service" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "open-host-service" }] });
       const result = generateContextMap(domains, config, { format: "mermaid" });
       assert.include(result, "-->|OHS|");
     });
@@ -100,7 +79,10 @@ describe("contextMap", () => {
         makeDomain("Shop & Economy"),
         makeDomain("Authentication"),
       ];
-      const config = makeConfig([{ from: "Authentication", to: "Shop & Economy", type: "customer-supplier" }]);
+      const config = makeConfig(
+        {},
+        { relationships: [{ from: "Authentication", to: "Shop & Economy", type: "customer-supplier" }] },
+      );
       const result = generateContextMap(domains, config, { format: "mermaid" });
       assert.include(result, '"Shop & Economy"');
     });
@@ -111,7 +93,10 @@ describe("contextMap", () => {
         makeDomain("Core"),
         makeDomain("Unrelated"),
       ];
-      const config = makeConfig([{ from: "Core", to: "Authentication", type: "customer-supplier" }]);
+      const config = makeConfig(
+        {},
+        { relationships: [{ from: "Core", to: "Authentication", type: "customer-supplier" }] },
+      );
       const result = generateContextMap(domains, config, { format: "mermaid", domain: "Authentication" });
       assert.include(result, "Authentication");
       assert.include(result, "Core");
@@ -138,7 +123,7 @@ describe("contextMap", () => {
 
     it("domain without special chars is not quoted", () => {
       const domains = [makeDomain("Auth"), makeDomain("Core")];
-      const config = makeConfig([{ from: "Auth", to: "Core", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Auth", to: "Core", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "mermaid" });
       // Auth and Core are plain identifiers, should not be quoted
       assert.notInclude(result, '"Auth"');
@@ -160,7 +145,7 @@ describe("contextMap", () => {
 
     it("text format does not contain mermaid syntax", () => {
       const domains = [makeDomain("Auth"), makeDomain("Core")];
-      const config = makeConfig([{ from: "Core", to: "Auth", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Core", to: "Auth", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "text" });
       assert.notInclude(result, "graph LR");
       assert.notInclude(result, "==SK==>");
@@ -172,7 +157,7 @@ describe("contextMap", () => {
         makeDomain("Authentication"),
         makeDomain("Shop"),
       ];
-      const config = makeConfig([{ from: "Authentication", to: "Shop", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Authentication", to: "Shop", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "text" });
       assert.include(result, "Authentication");
       assert.include(result, "→ Shop [customer-supplier]");
@@ -183,7 +168,7 @@ describe("contextMap", () => {
         makeDomain("Authentication"),
         makeDomain("Shop"),
       ];
-      const config = makeConfig([{ from: "Authentication", to: "Shop", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Authentication", to: "Shop", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "text" });
       assert.include(result, "← Authentication [customer-supplier]");
     });
@@ -204,7 +189,7 @@ describe("contextMap", () => {
         makeDomain("Core"),
         makeDomain("Unrelated"),
       ];
-      const config = makeConfig([{ from: "Core", to: "Auth", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Core", to: "Auth", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "text", domain: "Auth" });
       assert.include(result, "Auth");
       assert.include(result, "Core");
@@ -253,7 +238,7 @@ describe("contextMap", () => {
         makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }),
         makeDomain("B"),
       ];
-      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
       assert.include(result, "→ B [customer-supplier]");
       assert.notInclude(result, "observed-ref");
@@ -314,7 +299,7 @@ describe("contextMap", () => {
         }),
         makeDomain("B"),
       ];
-      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "customer-supplier" }] });
       const result = generateContextMap(domains, config, { format: "text", includeObserved: true });
       assert.include(result, "→ B [customer-supplier]");
       assert.notInclude(result, "[observed]");

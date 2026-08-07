@@ -1,26 +1,8 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { formatDomainIndex, formatDomainPage, formatDomainConfig } from "../../src/domain/formatting.js";
-import type { DomainData, DomainConfig } from "../../src/domain/types.js";
-
-function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-    strategy: opts?.strategy,
-  };
-}
+import type { DomainConfig } from "../../src/domain/types.js";
+import { makeDomain } from "../domainModel.js";
 
 describe("formatting — strategy classification", () => {
   describe("formatDomainIndex — backward compat (no strategy)", () => {
@@ -102,7 +84,7 @@ describe("formatting — strategy classification", () => {
     it("shared subdomains are not affected by strategy grouping", () => {
       const domains = [
         makeDomain("CoreDomain", { description: "Core", strategy: "core" }),
-        { ...makeDomain("SharedSub", { description: "Shared" }), isSharedSubdomain: true },
+        makeDomain("SharedSub", { description: "Shared", isSharedSubdomain: true }),
       ];
       const result = formatDomainIndex(domains, []);
       assert.include(result, "## Shared Subdomains");

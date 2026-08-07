@@ -1,30 +1,8 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { validateBoundaries, formatBoundaryReport } from "../../src/domain/relationships.js";
-import type { DomainData, DomainConfig } from "../../src/domain/types.js";
-
-function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-    strategy: opts?.strategy,
-  };
-}
-
-function makeConfig(relationships?: DomainConfig["relationships"]): DomainConfig {
-  return { domains: {}, relationships };
-}
+import type { DomainConfig } from "../../src/domain/types.js";
+import { makeDomain, makeConfig } from "../domainModel.js";
 
 describe("relationships", () => {
   describe("validateBoundaries", () => {
@@ -37,7 +15,7 @@ describe("relationships", () => {
 
     it("no cross-domain includes, relationships declared → no violations", () => {
       const domains = [makeDomain("Auth"), makeDomain("Combat")];
-      const config = makeConfig([{ from: "Combat", to: "Auth", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Combat", to: "Auth", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.deepEqual(report.violations, []);
     });
@@ -61,7 +39,7 @@ describe("relationships", () => {
         makeDomain("Combat"),
       ];
       // B is supplier (from), A is customer (to)
-      const config = makeConfig([{ from: "Combat", to: "Auth", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Combat", to: "Auth", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.deepEqual(report.violations, []);
     });
@@ -72,14 +50,14 @@ describe("relationships", () => {
         makeDomain("Combat"),
       ];
       // check both directions
-      const config = makeConfig([{ from: "Auth", to: "Combat", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Auth", to: "Combat", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.deepEqual(report.violations, []);
     });
 
     it("stale relationship references non-existent domain → stale violation", () => {
       const domains = [makeDomain("Auth"), makeDomain("Combat")];
-      const config = makeConfig([{ from: "Auth", to: "NonExistent", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Auth", to: "NonExistent", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.equal(report.violations.length, 1);
       assert.equal(report.violations[0].type, "stale");
@@ -88,7 +66,7 @@ describe("relationships", () => {
 
     it("stale relationship where both domains are non-existent → stale violation", () => {
       const domains = [makeDomain("Auth")];
-      const config = makeConfig([{ from: "Missing1", to: "Missing2", type: "shared-kernel" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Missing1", to: "Missing2", type: "shared-kernel" }] });
       const report = validateBoundaries(domains, config);
       assert.equal(report.violations.length, 1);
       assert.equal(report.violations[0].type, "stale");
@@ -102,7 +80,7 @@ describe("relationships", () => {
         }),
         makeDomain("Core", { strategy: "core" }),
       ];
-      const config = makeConfig([{ from: "Core", to: "Support", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Core", to: "Support", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.equal(report.violations.length, 1);
       assert.equal(report.violations[0].type, "forbidden");
@@ -118,7 +96,7 @@ describe("relationships", () => {
         }),
         makeDomain("Core", { strategy: "core" }),
       ];
-      const config = makeConfig([{ from: "Core", to: "Generic", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Core", to: "Generic", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.equal(report.violations.length, 1);
       assert.equal(report.violations[0].type, "forbidden");
@@ -132,7 +110,7 @@ describe("relationships", () => {
         }),
         makeDomain("Support", { strategy: "supporting" }),
       ];
-      const config = makeConfig([{ from: "Support", to: "Core", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Support", to: "Core", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       const forbidden = report.violations.filter((v) => v.type === "forbidden");
       assert.deepEqual(forbidden, []);
@@ -150,7 +128,7 @@ describe("relationships", () => {
 
     it("reference edge covered by a declared relationship → no violation", () => {
       const domains = [makeDomain("A", { referencesFrom: new Map([["B", ["score"]]]) }), makeDomain("B")];
-      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.deepEqual(report.violations, []);
     });
@@ -167,7 +145,7 @@ describe("relationships", () => {
 
     it("expression-reference edge covered by a declared relationship → no violation", () => {
       const domains = [makeDomain("A", { expressionRefsFrom: new Map([["B", ["score"]]]) }), makeDomain("B")];
-      const config = makeConfig([{ from: "A", to: "B", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "A", to: "B", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.deepEqual(report.violations, []);
     });
@@ -180,7 +158,7 @@ describe("relationships", () => {
         }),
         makeDomain("Core", { strategy: "core" }),
       ];
-      const config = makeConfig([{ from: "Core", to: "Support", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Core", to: "Support", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.equal(report.violations.length, 1);
       assert.equal(report.violations[0].type, "forbidden");
@@ -212,7 +190,7 @@ describe("relationships", () => {
         }),
         makeDomain("Core", { strategy: "core" }),
       ];
-      const config = makeConfig([{ from: "Core", to: "Support", type: "customer-supplier" }]);
+      const config = makeConfig({}, { relationships: [{ from: "Core", to: "Support", type: "customer-supplier" }] });
       const report = validateBoundaries(domains, config);
       assert.equal(report.violations.length, 1);
       assert.equal(report.violations[0].type, "forbidden");

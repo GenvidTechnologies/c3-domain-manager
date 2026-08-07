@@ -2,7 +2,6 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import {
   listUncategorized,
   listStaleOverrides,
@@ -12,32 +11,18 @@ import {
 } from "../../src/domain/domainAnalysis.js";
 import type { DomainConfig } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
-
-/** Create a minimal DomainConfig for testing. */
-function makeConfig(
-  domains: DomainConfig["domains"],
-  overrides?: DomainConfig["overrides"],
-  sharedSubdomains?: DomainConfig["sharedSubdomains"],
-): DomainConfig {
-  return { domains, overrides, sharedSubdomains };
-}
-
-/** Create a file (and its parent directories) in the temp dir. */
-function createFile(rootDir: string, relativePath: string, content = ""): void {
-  const fullPath = path.join(rootDir, relativePath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, content);
-}
+import { createFile, makeTempDir, removeTempDir } from "../syntheticProject.js";
+import { makeConfig } from "../domainModel.js";
 
 describe("domainAnalysis", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "domainAnalysis-"));
+    tmpDir = makeTempDir("domainAnalysis-");
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   describe("listStaleOverrides", () => {
@@ -48,8 +33,10 @@ describe("domainAnalysis", () => {
       const config = makeConfig(
         { Auth: { description: "Auth", eventSheetDirs: ["Login"] } },
         {
-          "eventSheets/Login/LoginEvents.json": "Auth",
-          "layouts/Main/MainLayout.json": "Navigation",
+          overrides: {
+            "eventSheets/Login/LoginEvents.json": "Auth",
+            "layouts/Main/MainLayout.json": "Navigation",
+          },
         },
       );
 
@@ -63,9 +50,11 @@ describe("domainAnalysis", () => {
       const config = makeConfig(
         { Auth: { description: "Auth" } },
         {
-          "eventSheets/Login/LoginEvents.json": "Auth",
-          "eventSheets/Deleted/OldSheet.json": "Legacy",
-          "layouts/Missing/Layout.json": "Gone",
+          overrides: {
+            "eventSheets/Login/LoginEvents.json": "Auth",
+            "eventSheets/Deleted/OldSheet.json": "Legacy",
+            "layouts/Missing/Layout.json": "Gone",
+          },
         },
       );
 
@@ -130,7 +119,10 @@ describe("domainAnalysis", () => {
     it("classifies files via overrides", () => {
       createFile(tmpDir, "eventSheets/Misc/SpecialEvents.json");
 
-      const config = makeConfig({ Auth: { description: "Auth" } }, { "eventSheets/Misc/SpecialEvents.json": "Auth" });
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "eventSheets/Misc/SpecialEvents.json": "Auth" } },
+      );
 
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, []);
@@ -139,12 +131,17 @@ describe("domainAnalysis", () => {
     it("classifies files via shared subdomains", () => {
       createFile(tmpDir, "eventSheets/Chat/ChatEvents.json");
 
-      const config = makeConfig({ Auth: { description: "Auth" } }, undefined, {
-        Chat: {
-          description: "Chat system",
-          eventSheetDirs: ["Chat"],
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          sharedSubdomains: {
+            Chat: {
+              description: "Chat system",
+              eventSheetDirs: ["Chat"],
+            },
+          },
         },
-      });
+      );
 
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, []);

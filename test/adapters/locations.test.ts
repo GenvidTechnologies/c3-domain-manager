@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { resolveLocations, resolveProjectRoot, NO_EXTRACTED } from "../../src/adapters/locations.js";
 import { ExpectedChanges, isMcpError } from "@genvidtech/mcp-utils";
+import { makeTempDir, removeTempDir } from "../syntheticProject.js";
 
 // Use a deterministic project root that is always absolute and works cross-platform.
 const root = path.resolve(os.tmpdir(), "c3dm-test-proj");
@@ -154,7 +155,7 @@ describe("resolveProjectRoot", () => {
 
   afterEach(() => {
     if (tmpDir) {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      removeTempDir(tmpDir);
       tmpDir = undefined;
     }
   });
@@ -196,7 +197,7 @@ describe("resolveProjectRoot", () => {
   });
 
   it("discovery: single child with project.c3proj returns that child with source: discovery", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "c3dm-pr-"));
+    tmpDir = makeTempDir("c3dm-pr-");
     const childDir = path.join(tmpDir, "myproject");
     fs.mkdirSync(childDir);
     fs.writeFileSync(path.join(childDir, "project.c3proj"), "");
@@ -209,7 +210,7 @@ describe("resolveProjectRoot", () => {
   });
 
   it("discovery: project.c3proj in cwd itself returns cwd with source: discovery", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "c3dm-pr-"));
+    tmpDir = makeTempDir("c3dm-pr-");
     fs.writeFileSync(path.join(tmpDir, "project.c3proj"), "");
 
     const result = resolveProjectRoot({}, tmpDir, {});
@@ -220,7 +221,7 @@ describe("resolveProjectRoot", () => {
   });
 
   it("0 markers under cwd returns cwd with source: cwd", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "c3dm-pr-"));
+    tmpDir = makeTempDir("c3dm-pr-");
     const result = resolveProjectRoot({}, tmpDir, {});
     assert.isFalse(isMcpError(result));
     const resolved = result as { path: string; source: string };
@@ -229,7 +230,7 @@ describe("resolveProjectRoot", () => {
   });
 
   it("two child dirs each with project.c3proj returns an isMcpError (ambiguous)", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "c3dm-pr-"));
+    tmpDir = makeTempDir("c3dm-pr-");
     const childA = path.join(tmpDir, "projectA");
     const childB = path.join(tmpDir, "projectB");
     fs.mkdirSync(childA);
