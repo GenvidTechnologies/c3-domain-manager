@@ -14,14 +14,8 @@ import {
 } from "../../src/domain/domainGenerator.js";
 import type { DomainConfig, DomainData } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
+import { createFile, makeObjectType, makeFamily } from "../syntheticProject.js";
 import type { EventSheet } from "@genvidtech/c3source";
-
-/** Create a file (and its parent directories) in the temp dir. */
-function createFile(rootDir: string, relativePath: string, content = ""): void {
-  const fullPath = path.join(rootDir, relativePath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, content);
-}
 
 /** Create a minimal valid eventSheet JSON file. */
 function eventSheetJson(name: string): string {
@@ -31,37 +25,6 @@ function eventSheetJson(name: string): string {
 /** Create a minimal valid layout JSON file. */
 function layoutJson(name: string, eventSheet = ""): string {
   return JSON.stringify({ name, layers: [], eventSheet });
-}
-
-/** Create a minimal valid ObjectType JSON file (shape mirrors addonInventory.test.ts). */
-function makeObjectType(name: string, pluginId: string, behaviorIds: string[] = [], effectIds: string[] = []): string {
-  return JSON.stringify({
-    name,
-    "plugin-id": pluginId,
-    sid: 1,
-    instanceVariables: [],
-    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
-    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
-  });
-}
-
-/** Create a minimal valid Family JSON file (shape mirrors addonInventory.test.ts). */
-function makeFamily(
-  name: string,
-  pluginId: string,
-  members: string[],
-  behaviorIds: string[] = [],
-  effectIds: string[] = [],
-): string {
-  return JSON.stringify({
-    name,
-    "plugin-id": pluginId,
-    sid: 1,
-    instanceVariables: [],
-    behaviorTypes: behaviorIds.map((behaviorId) => ({ behaviorId, name: behaviorId, sid: 1 })),
-    effectTypes: effectIds.map((effectId) => ({ effectId, name: effectId })),
-    members,
-  });
 }
 
 describe("computeDomainData", () => {

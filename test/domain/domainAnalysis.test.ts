@@ -12,6 +12,7 @@ import {
 } from "../../src/domain/domainAnalysis.js";
 import type { DomainConfig } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
+import { createFile } from "../syntheticProject.js";
 
 /** Create a minimal DomainConfig for testing. */
 function makeConfig(
@@ -20,13 +21,6 @@ function makeConfig(
   sharedSubdomains?: DomainConfig["sharedSubdomains"],
 ): DomainConfig {
   return { domains, overrides, sharedSubdomains };
-}
-
-/** Create a file (and its parent directories) in the temp dir. */
-function createFile(rootDir: string, relativePath: string, content = ""): void {
-  const fullPath = path.join(rootDir, relativePath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, content);
 }
 
 describe("domainAnalysis", () => {
