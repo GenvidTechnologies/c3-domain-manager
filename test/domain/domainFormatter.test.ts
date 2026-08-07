@@ -5,7 +5,8 @@ import { extractFunctionDefs } from "../../src/domain/domainGenerator.js";
 import { extractIncludes } from "@genvidtech/c3source";
 import type { EventSheet, EventSheetEvent } from "@genvidtech/c3source";
 import { formatDomainIndex, formatDomainPage } from "../../src/domain/formatting.js";
-import type { DomainConfig, DomainData, FunctionDef } from "../../src/domain/types.js";
+import type { DomainConfig, FunctionDef } from "../../src/domain/types.js";
+import { makeDomain } from "../domainModel.js";
 
 /** Wrap a fixture event array into a minimal EventSheet for the c3source extractors. */
 function makeSheet(name: string, events: unknown[]): EventSheet {
@@ -20,25 +21,6 @@ function includeNames(events: unknown[]): string[] {
 /** Helper to create a minimal DomainConfig. */
 function makeConfig(domains: DomainConfig["domains"], overrides?: DomainConfig["overrides"]): DomainConfig {
   return { domains, overrides };
-}
-
-/** Helper to create a DomainData with sensible defaults. */
-function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-  };
 }
 
 describe("domainFormatter", () => {

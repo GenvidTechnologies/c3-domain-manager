@@ -1,25 +1,8 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
 import { generateContextMap } from "../../src/domain/contextMap.js";
-import type { DomainData, DomainConfig } from "../../src/domain/types.js";
-
-function makeDomain(name: string, opts?: Partial<DomainData>): DomainData {
-  return {
-    name,
-    description: opts?.description ?? "",
-    eventSheets: opts?.eventSheets ?? [],
-    layouts: opts?.layouts ?? [],
-    scripts: opts?.scripts ?? [],
-    functions: opts?.functions ?? [],
-    includesFrom: opts?.includesFrom ?? new Map(),
-    includedBy: opts?.includedBy ?? new Map(),
-    referencesFrom: opts?.referencesFrom ?? new Map(),
-    referencedBy: opts?.referencedBy ?? new Map(),
-    expressionRefsFrom: opts?.expressionRefsFrom ?? new Map(),
-    expressionRefsBy: opts?.expressionRefsBy ?? new Map(),
-    addons: opts?.addons ?? [],
-  };
-}
+import type { DomainConfig } from "../../src/domain/types.js";
+import { makeDomain } from "../domainModel.js";
 
 function makeConfig(relationships?: DomainConfig["relationships"]): DomainConfig {
   return { domains: {}, relationships };
