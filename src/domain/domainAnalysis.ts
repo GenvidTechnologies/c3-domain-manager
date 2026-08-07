@@ -10,18 +10,31 @@ import { classifyFile, VALID_PREFIXES } from "./classification.js";
 import type { DomainConfig } from "./types.js";
 
 /**
- * Recursively collect C3 *source* files under a directory, returning paths
- * relative to baseDir (forward-slash — the form classifyFile/overrides require).
+ * Recursively collect absolute paths of C3 *source* files under a directory.
  * Skips C3-editor-local artifacts (*.uistate.json, uistate/ dirs, tsconfig.json)
  * via c3source's isEditorLocalPath — the single owner of that C3 platform fact.
  * Returns an empty array if the directory doesn't exist (find_all_files_path
  * throws ENOENT rather than tolerating an absent dir).
  */
-function collectSourceFiles(dir: string, baseDir: string): string[] {
+function walkSource(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
-  return find_all_files_path(dir, (name) => !isEditorLocalPath(name)).map((p) =>
-    path.relative(baseDir, p).replace(/\\/g, "/"),
-  );
+  return find_all_files_path(dir, (name) => !isEditorLocalPath(name));
+}
+
+/**
+ * classifyFile/overrides require section-rooted forward-slash paths; the
+ * walker returns absolute native-separator ones. The /g flag matters on
+ * Windows.
+ */
+const relativize = (baseDir: string) => (p: string) =>
+  path.relative(baseDir, p).replace(/\\/g, "/");
+
+/**
+ * Recursively collect C3 *source* files under a directory, returning paths
+ * relative to baseDir (forward-slash — the form classifyFile/overrides require).
+ */
+function collectSourceFiles(dir: string, baseDir: string): string[] {
+  return walkSource(dir).map(relativize(baseDir));
 }
 
 /**
