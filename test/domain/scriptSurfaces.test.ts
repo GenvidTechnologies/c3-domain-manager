@@ -123,3 +123,109 @@ describe("listUncategorized vs findScriptEntries — cross-surface agreement (is
     assert.deepEqual(uncategorized, entries);
   });
 });
+
+// --- Authored-script rule, wired end-to-end (issue #39 / ADR 0016) ---------
+
+describe("authored-script rule — both surfaces (issue #39)", () => {
+  let tmpDir: string;
+  let scriptsDir: string;
+
+  const config = makeConfig({
+    Placeholder: { description: "claims nothing — no scriptDirs" },
+  });
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("scriptSurfaces-rule-");
+    scriptsDir = path.join(tmpDir, "scripts");
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  it("AC #2 — suppresses .js compiled siblings at the root and inside a layer dir, keeps both .ts", () => {
+    createFile(tmpDir, "scripts/main.ts");
+    createFile(tmpDir, "scripts/main.js");
+    createFile(tmpDir, "scripts/shared/a.ts");
+    createFile(tmpDir, "scripts/shared/a.js");
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.notInclude(uncategorized, "scripts/main.js");
+    assert.notInclude(uncategorized, "scripts/shared/a.js");
+    assert.include(uncategorized, "scripts/main.ts");
+    assert.include(uncategorized, "scripts/shared/a.ts");
+
+    const entries = findScriptEntries(scriptsDir)
+      .filter((e) => !e.isDirectory)
+      .map((e) => e.relativePath);
+    assert.notInclude(entries, "scripts/main.js");
+    assert.notInclude(entries, "scripts/shared/a.js");
+    assert.include(entries, "scripts/main.ts");
+    assert.include(entries, "scripts/shared/a.ts");
+  });
+
+  it("AC #3 — admits .js files with no .ts sibling, at the root and inside layer dirs", () => {
+    createFile(tmpDir, "scripts/shared/onlyjs.js");
+    createFile(tmpDir, "scripts/c3-runtime/c.js");
+
+    const entries = findScriptEntries(scriptsDir).filter((e) => !e.isDirectory);
+    assert.deepInclude(entries, { relativePath: "scripts/shared/onlyjs.js", isDirectory: false });
+    assert.deepInclude(entries, {
+      relativePath: "scripts/c3-runtime/c.js",
+      isDirectory: false,
+    });
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.include(uncategorized, "scripts/shared/onlyjs.js");
+    assert.include(uncategorized, "scripts/c3-runtime/c.js");
+  });
+
+  it("AC #4 — a project with no .ts at all is fully reported via .js admission", () => {
+    createFile(tmpDir, "scripts/game.js");
+    createFile(tmpDir, "scripts/shared/net.js");
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.deepEqual(uncategorized, ["scripts/game.js", "scripts/shared/net.js"]);
+
+    const entries = findScriptEntries(scriptsDir)
+      .filter((e) => !e.isDirectory)
+      .map((e) => e.relativePath)
+      .sort();
+    assert.deepEqual(entries, ["scripts/game.js", "scripts/shared/net.js"]);
+  });
+
+  it("clause 1 is per-directory — a same-named .js in a sibling dir is NOT suppressed", () => {
+    createFile(tmpDir, "scripts/shared/a.ts");
+    createFile(tmpDir, "scripts/common/a.js");
+    // Deliberately no scripts/common/a.ts.
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.include(uncategorized, "scripts/common/a.js");
+  });
+
+  it(".d.ts is not a compiled-sibling suppressor", () => {
+    createFile(tmpDir, "scripts/ts-defs/Player.d.ts");
+    createFile(tmpDir, "scripts/ts-defs/Player.js");
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.include(uncategorized, "scripts/ts-defs/Player.js");
+  });
+
+  // Pinned divergence D (ADR 0016): collectScriptFiles (listUncategorized's
+  // scriptSubdirs walk) applies no extension filter at all — by design, per
+  // ADR 0013 decision #4, so a stray non-script file under scripts/shared/
+  // still surfaces as an "unmapped file here" finding. findScriptEntries only
+  // ever emits script-source entries, so a non-script file is invisible to
+  // it. This is a decision, not a bug.
+  it("pinned divergence D — a non-script file under scripts/shared/ is reported by listUncategorized but not findScriptEntries", () => {
+    createFile(tmpDir, "scripts/shared/data.json");
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    assert.include(uncategorized, "scripts/shared/data.json");
+
+    const entries = findScriptEntries(scriptsDir)
+      .filter((e) => !e.isDirectory)
+      .map((e) => e.relativePath);
+    assert.notInclude(entries, "scripts/shared/data.json");
+  });
+});

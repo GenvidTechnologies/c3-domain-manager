@@ -6,7 +6,12 @@ import {
   isEditorLocalPath,
   C3_TS_DEFS_FOLDER,
 } from "@genvidtech/c3source";
-import { classifyFile, VALID_PREFIXES } from "./classification.js";
+import {
+  classifyFile,
+  VALID_PREFIXES,
+  isScriptSourceName,
+  isCompiledSibling,
+} from "./classification.js";
 import type { DomainConfig } from "./types.js";
 
 /**
@@ -37,24 +42,48 @@ function collectSourceFiles(dir: string, baseDir: string): string[] {
   return walkSource(dir).map(relativize(baseDir));
 }
 
+/** Clause 1, applied over absolute paths: drop each X.js whose X.ts sibling sits in
+ *  the SAME directory. Sets are built per-dirname — a flat set would cross-suppress. */
+function suppressCompiledSiblings(absPaths: string[]): string[] {
+  const byDir = new Map<string, Set<string>>();
+  for (const p of absPaths) {
+    const dir = path.dirname(p);
+    let names = byDir.get(dir);
+    if (!names) byDir.set(dir, (names = new Set()));
+    names.add(path.basename(p));
+  }
+  return absPaths.filter(
+    (p) => !isCompiledSibling(path.basename(p), byDir.get(path.dirname(p))!),
+  );
+}
+
+/** Script-subdirectory variant of collectSourceFiles. Same walk and the SAME
+ *  no-extension-filter policy (ADR 0013 #4 — a stray .md under scripts/common/ is
+ *  still a legitimate "unmapped file here" finding), plus clause 1. Deliberately
+ *  does NOT apply clause 2; see ADR 0016's "divergence D" consequence. */
+function collectScriptFiles(dir: string, baseDir: string): string[] {
+  return suppressCompiledSiblings(walkSource(dir)).map(relativize(baseDir));
+}
+
 /**
- * Collect root-level .ts files in a directory (non-recursive), returning paths
+ * Collect root-level script files in a directory (non-recursive), returning paths
  * relative to baseDir. `descend: () => false` expresses the non-recursion: the
- * allowlisted script subdirs are walked separately below, and recursing here
- * would both double-report them and pull in non-allowlisted subdirs.
+ * allowlisted script subdirs are walked separately below, and recursing here would
+ * both double-report them and pull in non-allowlisted subdirs.
  *
- * The .ts filter is load-bearing — real projects ship compiled .js next to .ts
- * at the scripts/ root. Known accepted limitation: Construct 3 supports both
- * .ts and .js scripts, so a JS-authored project's root scripts are invisible
- * here. Broader .js support is tracked separately; do not widen this filter.
+ * Applies BOTH clauses of the authored-script rule (ADR 0016): .ts|.js admission,
+ * then compiled-sibling suppression. The sibling test cannot live in the predicate —
+ * find_all_files_path hands it a bare basename with no directory context — so it is
+ * a post-filter over the absolute paths the walk returns.
  */
-function collectRootTsFiles(dir: string, baseDir: string): string[] {
+function collectRootScriptFiles(dir: string, baseDir: string): string[] {
   if (!fs.existsSync(dir)) return [];
-  return find_all_files_path(
+  const found = find_all_files_path(
     dir,
-    (name) => name.endsWith(".ts") && !isEditorLocalPath(name),
+    (name) => isScriptSourceName(name) && !isEditorLocalPath(name),
     () => false,
-  ).map((p) => path.relative(baseDir, p).replace(/\\/g, "/"));
+  );
+  return suppressCompiledSiblings(found).map(relativize(baseDir));
 }
 
 /**
@@ -86,7 +115,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   // index its generated .d.ts files into a domain via scriptDirs (see ADR 0013).
   const scriptSubdirs = ["shared", "c3-runtime", "common", C3_TS_DEFS_FOLDER];
   for (const subdir of scriptSubdirs) {
-    const files = collectSourceFiles(path.join(project.scriptsDir, subdir), rootDir);
+    const files = collectScriptFiles(path.join(project.scriptsDir, subdir), rootDir);
     for (const file of files) {
       if (classifyFile(file, "script", config) === null) {
         uncategorized.push(file);
@@ -94,9 +123,9 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
     }
   }
 
-  // Root-level .ts files in scripts/
-  const rootTsFiles = collectRootTsFiles(project.scriptsDir, rootDir);
-  for (const file of rootTsFiles) {
+  // Root-level script files in scripts/
+  const rootScriptFiles = collectRootScriptFiles(project.scriptsDir, rootDir);
+  for (const file of rootScriptFiles) {
     if (classifyFile(file, "script", config) === null) {
       uncategorized.push(file);
     }
