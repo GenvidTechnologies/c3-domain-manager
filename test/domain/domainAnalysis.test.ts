@@ -230,11 +230,14 @@ describe("domainAnalysis", () => {
       createFile(tmpDir, "scripts/ts-defs/tsconfig.json");
       createFile(tmpDir, "scripts/tsconfig.json");
       createFile(tmpDir, "scripts/main.ts");
-      // scripts/main.js pins the deliberate .ts-only filter at the scripts
-      // root (Construct 3 supports both .ts and .js; broader .js support is
-      // a tracked follow-up, not this change). scripts/ts-defs/** is
+      // scripts/main.js is suppressed because scripts/main.ts sits beside it
+      // in the same directory (compiled-sibling suppression, ADR 0016 clause
+      // 1) -- not because of a .ts-only filter, which no longer exists.
+      // scripts/onlyjs.js has no .ts sibling, so it IS reported: it exercises
+      // the new .js admission (ADR 0016 clause 2). scripts/ts-defs/** is
       // deliberately walked and reported.
       createFile(tmpDir, "scripts/main.js");
+      createFile(tmpDir, "scripts/onlyjs.js");
 
       const config = makeConfig({
         Auth: { description: "Auth" },
@@ -243,6 +246,7 @@ describe("domainAnalysis", () => {
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, [
         "scripts/main.ts",
+        "scripts/onlyjs.js",
         "scripts/ts-defs/Player.d.ts",
         "scripts/ts-defs/objects.d.ts",
       ]);
@@ -256,13 +260,14 @@ describe("domainAnalysis", () => {
       createFile(tmpDir, "scripts/tsconfig.json");
       createFile(tmpDir, "scripts/main.ts");
       createFile(tmpDir, "scripts/main.js");
+      createFile(tmpDir, "scripts/onlyjs.js");
 
       const config = makeConfig({
         Core: { description: "Core", scriptDirs: ["ts-defs"] },
       });
 
       const result = listUncategorized(tmpDir, config);
-      assert.deepEqual(result, ["scripts/main.ts"]);
+      assert.deepEqual(result, ["scripts/main.ts", "scripts/onlyjs.js"]);
     });
   });
 });
@@ -381,7 +386,7 @@ describe("listUncategorized — canonical fixture", () => {
     // point of ADR 0013:
     //
     //   tsconfig.json  never reaches classifyFile at all. The root-scripts walk
-    //                  filters to .ts, and isEditorLocalPath excludes it by name.
+    //                  filters to .ts|.js, and isEditorLocalPath excludes it by name.
     //   ts-defs/*.d.ts DO reach classifyFile -- all 56 of them, via the recursive
     //                  walk -- and are classified into Gameplay by
     //                  scriptDirs: ["ts-defs"]. They are absent because they were

@@ -25,7 +25,7 @@ import type {
   Condition,
   ScriptAction,
 } from "@genvidtech/c3source";
-import { classifyFile } from "./classification.js";
+import { classifyFile, isScriptSourceName, isCompiledSibling } from "./classification.js";
 import { computeHubDomains } from "./coupling.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
@@ -161,6 +161,9 @@ export function findScriptEntries(scriptsDir: string): Array<{ relativePath: str
 
   function scanDir(dir: string, prefix: string) {
     const names = fs.readdirSync(dir).sort();
+    // Free: the listing above already exists. Scoping the set to this scanDir
+    // invocation (rather than hoisting it) is what keeps clause 1 per-directory.
+    const siblingNames = new Set(names);
     for (const name of names) {
       const fullPath = path.join(dir, name);
       const stats = fs.statSync(fullPath);
@@ -172,9 +175,24 @@ export function findScriptEntries(scriptsDir: string): Array<{ relativePath: str
         } else if (isReportableScriptDir(name)) {
           entries.push({ relativePath: `scripts/${prefix}${name}/`, isDirectory: true });
         }
-      } else if (stats.isFile() && name.endsWith(".ts")) {
-        // No !isEditorLocalPath needed here: no editor-local name ends with ".ts"
-        // (*.uistate.json, tsconfig.json). Add it if that filter is ever relaxed.
+      } else if (
+        stats.isFile() &&
+        isScriptSourceName(name) &&
+        !isEditorLocalPath(name) &&
+        !isCompiledSibling(name, siblingNames)
+      ) {
+        // The editor-local guard is now unconditional. It used to be provably
+        // redundant — the filter admitted only ".ts", and no EDITOR_LOCAL_EXCLUSIONS
+        // member ends in ".ts" — and the previous comment here said to add the guard
+        // if that filter were ever relaxed. Admitting ".js" relaxes it, so the guard
+        // goes in. It is still behaviour-neutral today (no exclusion ends in ".js"
+        // either), but the redundancy was only ever an accident of c3source's current
+        // list, and that list is c3source's to change: consume the predicate, never
+        // re-derive which suffixes it holds (ADR 0013 #1).
+        //
+        // Note this is the FILE branch. The directory branch above must keep using
+        // isReportableScriptDir, which exempts ts-defs/ — swapping it for a bare
+        // isEditorLocalPath would silently stop generated typings being indexable.
         entries.push({ relativePath: `scripts/${prefix}${name}`, isDirectory: false });
       }
     }

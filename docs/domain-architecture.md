@@ -148,7 +148,7 @@ Files that match no rule are "uncategorized". Run `c3-domain-manager list-uncate
 
 One exception: `scripts/ts-defs/` is itself editor-local by that same rule, but this tool deliberately keeps it walked and reportable so a project can index its generated `.d.ts` files into a domain via `scriptDirs` — see `docs/decisions/0013-editor-local-exclusion-list-uncategorized.md`. `tsconfig.json`/`uistate/` nested *inside* `ts-defs/` are still excluded.
 
-`list-uncategorized`'s root-level `scripts/` scan (files directly under `scripts/`, outside the allowlisted subdirectories) only considers `.ts` files — a `.js` root script is not reported. This is a known, currently-accepted limitation; see ADR 0013's consequences.
+Both `list-uncategorized` and the generated domain index apply the same authored-script rule to `.ts`/`.js` files: a script is reported (or indexed) regardless of which of the two extensions it uses, except that a `.js` file is suppressed when a same-basename `.ts` file sits alongside it in the same directory — that pairing is treated as compiler output for the `.ts` already being reported, not a second source file. A `.js` with no `.ts` sibling in its directory is reported like any other script. See ADR 0016 — `docs/decisions/0016-authored-script-js-support.md`.
 
 ## Strategic classification
 

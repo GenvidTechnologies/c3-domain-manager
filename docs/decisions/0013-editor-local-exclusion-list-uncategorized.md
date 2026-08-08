@@ -164,6 +164,7 @@ does not conclude the version bump was ceremonial.
   and absent from the generated domain index. This predates this ADR and is
   accepted rather than fixed here; full `.js` script support is tracked as a
   follow-up issue.
+  **Superseded by [[0016-authored-script-js-support]]**
 - **Inert overrides (accepted gap).** An `overrides` entry keyed on a path
   that is now excluded (e.g. a `.uistate.json` file) becomes permanently
   dead: `list-uncategorized` will never re-surface it, and
