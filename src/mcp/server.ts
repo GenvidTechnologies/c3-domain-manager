@@ -21,6 +21,7 @@ import { computeHubDomains } from "../domain/coupling.js";
 import {
   listUncategorized,
   listStaleOverrides,
+  listInertOverrides,
   collectValidDomainNames,
   validateOverrideKeys,
   validateOverrideValues,
@@ -237,7 +238,7 @@ server.registerTool(
   {
     title: "List Stale Overrides",
     description:
-      "List override entries in domain-config.json that point to files that no longer exist on disk. These should be removed to keep the domain config clean.",
+      "List override entries in domain-config.json that are dead weight: either they point to files that no longer exist on disk (stale), or the file still exists but no walk can ever surface it, so the override can never take effect (inert). Both kinds should be removed to keep the domain config clean.",
     annotations: READ_ONLY,
     inputSchema: {},
   },
@@ -247,14 +248,24 @@ server.registerTool(
         const config = await loadDomainConfig();
         if (isMcpError(config)) return config;
         const stale = listStaleOverrides(PROJECT_ROOT, config);
-        if (stale.length === 0) {
-          return { content: [{ type: "text", text: "No stale overrides found." }] };
+        const inert = listInertOverrides(PROJECT_ROOT, config);
+        if (stale.length === 0 && inert.length === 0) {
+          return { content: [{ type: "text", text: "No stale or inert overrides found." }] };
+        }
+        const sections: string[] = [];
+        if (stale.length > 0) {
+          sections.push(`${stale.length} stale overrides:\n${stale.join("\n")}`);
+        }
+        if (inert.length > 0) {
+          sections.push(
+            `${inert.length} inert overrides:\n${inert.map((i) => `${i.key}\n  ${i.reason}`).join("\n")}`,
+          );
         }
         return {
           content: [
             {
               type: "text",
-              text: `${stale.length} stale overrides:\n${stale.join("\n")}`,
+              text: sections.join("\n\n"),
             },
           ],
         };
