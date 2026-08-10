@@ -93,7 +93,7 @@ Run any subcommand with `--help` for full usage.
 |------------|-------------|
 | `generate` | Generate domain index at `extracted/domain-index/` |
 | `list-uncategorized` | List files/directories not mapped to any domain — the worklist for `generate`'s output |
-| `list-stale-overrides` | List override entries pointing to non-existent files |
+| `list-stale-overrides` | List override entries pointing to non-existent files, plus inert entries no enumeration can ever produce |
 | `validate-editor` | Report event sheets the C3 editor would reject (editor-strictness validation) |
 | `server` | Start the MCP server (stdio transport) |
 
@@ -142,7 +142,7 @@ The server auto-generates the domain index on startup if `extracted/domain-index
 | `read-domain-index` | Read the master index or a named domain's detail page. Supports `offset`/`limit` pagination. |
 | `read-domain-config` | Read `domain-config.json` in formatted text. Filter by `section`: `domains`, `sharedSubdomains`, `overrides`, or `all`. |
 | `list-uncategorized` | List files/directories with no domain assignment — the worklist for the generated domain index. |
-| `list-stale-overrides` | List override entries whose files no longer exist on disk. |
+| `list-stale-overrides` | List override entries whose files no longer exist on disk, plus inert entries no enumeration can ever produce. |
 | `get-state` | Return current `txId` and `domainDirty` flag. |
 | `glossary-check` | Report glossary terms that are defined differently across domains. |
 | `validate-boundaries` | Report undeclared cross-domain dependencies and forbidden dependency directions. |
@@ -182,6 +182,7 @@ import {
   computeDomainData,
   listUncategorized,
   listStaleOverrides,
+  listInertOverrides,
   validateEditorStrictness,
   formatEditorStrictnessReport,
 } from "@genvidtech/c3-domain-manager";
@@ -197,6 +198,7 @@ Key exports from `src/index.ts`:
 | `listUncategorized(root, config)` | `domainAnalysis` | Return file/directory paths not covered by the config — shares its `scripts/` enumeration with the generator (see next row) |
 | `findScriptEntries(scriptsDir, config?)` | `domainGenerator` | Enumerate `scripts/` entries (files and collapsed directories) — consumed by both `computeDomainData` and `listUncategorized` |
 | `listStaleOverrides(root, config)` | `domainAnalysis` | Return override keys whose files are missing |
+| `listInertOverrides(root, config)` | `domainAnalysis` | Return override keys whose files exist but no enumeration this tool performs can ever produce |
 | `collectGlossary(config)` | `glossary` | Collect all glossary entries across domains |
 | `findCollisions(entries)` | `glossary` | Find terms with conflicting definitions |
 | `validateBoundaries(domains, config, filter?)` | `relationships` | Check declared vs observed dependencies |
