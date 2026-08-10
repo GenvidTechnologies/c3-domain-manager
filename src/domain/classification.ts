@@ -22,17 +22,21 @@ export function classifyFile(
   fileType: "eventSheet" | "layout" | "script" | "objectType" | "family",
   config: DomainConfig,
 ): string | null {
+  // Tolerate a single trailing slash (directory entries, e.g. "scripts/other/")
+  // so callers no longer have to strip it themselves before calling in.
+  const normalizedPath = relativePath.endsWith("/") ? relativePath.slice(0, -1) : relativePath;
+
   // 1. Check overrides (exact match, highest priority)
-  if (config.overrides && relativePath in config.overrides) {
-    return config.overrides[relativePath];
+  if (config.overrides && normalizedPath in config.overrides) {
+    return config.overrides[normalizedPath];
   }
 
   // 2. Strip the file type root prefix to get the inner path
   const root = FILE_TYPES[fileType].root;
-  if (!relativePath.startsWith(root)) {
+  if (!normalizedPath.startsWith(root)) {
     return null;
   }
-  const innerPath = relativePath.slice(root.length); // e.g. "Login/LoginEvents.json"
+  const innerPath = normalizedPath.slice(root.length); // e.g. "Login/LoginEvents.json"
 
   // 3. Check domain directory arrays — longest prefix wins
   const dirKey = FILE_TYPES[fileType].dirKey;
