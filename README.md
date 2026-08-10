@@ -92,7 +92,7 @@ Run any subcommand with `--help` for full usage.
 | Subcommand | Description |
 |------------|-------------|
 | `generate` | Generate domain index at `extracted/domain-index/` |
-| `list-uncategorized` | List files not mapped to any domain |
+| `list-uncategorized` | List files/directories not mapped to any domain — the worklist for `generate`'s output |
 | `list-stale-overrides` | List override entries pointing to non-existent files |
 | `validate-editor` | Report event sheets the C3 editor would reject (editor-strictness validation) |
 | `server` | Start the MCP server (stdio transport) |
@@ -141,7 +141,7 @@ The server auto-generates the domain index on startup if `extracted/domain-index
 |------|-------------|
 | `read-domain-index` | Read the master index or a named domain's detail page. Supports `offset`/`limit` pagination. |
 | `read-domain-config` | Read `domain-config.json` in formatted text. Filter by `section`: `domains`, `sharedSubdomains`, `overrides`, or `all`. |
-| `list-uncategorized` | List files with no domain assignment. |
+| `list-uncategorized` | List files/directories with no domain assignment — the worklist for the generated domain index. |
 | `list-stale-overrides` | List override entries whose files no longer exist on disk. |
 | `get-state` | Return current `txId` and `domainDirty` flag. |
 | `glossary-check` | Report glossary terms that are defined differently across domains. |
@@ -194,7 +194,8 @@ Key exports from `src/index.ts`:
 | `classifyFile(path, fileType, config)` | `classification` | Classify one file path into a domain name |
 | `generateDomainIndex(root, extracted, configDir, configFileName, log)` → `Promise` | `domainGenerator` | Async I/O entry point — validates config via `DomainConfigSchema`, writes index |
 | `computeDomainData(root, config)` | `domainGenerator` | Pure computation — returns `DomainData[]` without I/O |
-| `listUncategorized(root, config)` | `domainAnalysis` | Return file paths not covered by the config |
+| `listUncategorized(root, config)` | `domainAnalysis` | Return file/directory paths not covered by the config — shares its `scripts/` enumeration with the generator (see next row) |
+| `findScriptEntries(scriptsDir, config?)` | `domainGenerator` | Enumerate `scripts/` entries (files and collapsed directories) — consumed by both `computeDomainData` and `listUncategorized` |
 | `listStaleOverrides(root, config)` | `domainAnalysis` | Return override keys whose files are missing |
 | `collectGlossary(config)` | `glossary` | Collect all glossary entries across domains |
 | `findCollisions(entries)` | `glossary` | Find terms with conflicting definitions |

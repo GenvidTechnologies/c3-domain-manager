@@ -138,7 +138,33 @@ File type roots:
 
 Example: a file at `eventSheets/Battle/Skills/ActiveSkills.json` with config `eventSheetDirs: ["Battle"]` matches `Battle/` and is classified under that domain. If a second domain declares `eventSheetDirs: ["Battle/Skills"]`, the longer prefix wins and the file goes to the second domain.
 
-Files that match no rule are "uncategorized". Run `c3-domain-manager list-uncategorized` to find them.
+Files — and, under `scripts/`, whole directories — that match no rule are "uncategorized". Run `c3-domain-manager list-uncategorized` to find them.
+
+**`list-uncategorized` is the worklist for the generated domain index**, not an
+independent inventory of every file on disk: a path is reportable exactly when
+assigning it to a domain would change what `generate` writes to
+`extracted/domain-index/`. For `eventSheets/`, `layouts/`, `objectTypes/`, and
+`families/`, that means every file the index's own collector for that section would
+otherwise emit unclassified. For `scripts/`, `list-uncategorized` delegates to the
+same walk the generator uses (`findScriptEntries`), so the two surfaces agree by
+construction:
+
+- A directory entry (a trailing-slash path like `scripts/other/`) means that whole
+  subdirectory is **attributed as a unit** — indexed, classified, and reported as one
+  entity — and is claimed as a unit with `scriptDirs`, not by mapping its individual
+  files. This collapse is automatically skipped — the directory is walked into instead —
+  when a `scriptDirs` entry (or `overrides` key) claims something *nested below* it;
+  otherwise that nested claim could never match anything and the whole subtree would
+  land in `unclassified` unreported.
+- A non-script file under `scripts/` (e.g. a stray `.json` or `.md`) is reported by
+  neither surface: the index has no representation for a non-script file under
+  `scripts/`, so there is nothing an `overrides` entry could usefully change. See
+  `docs/decisions/0017-script-surface-unification.md`.
+
+The other four sections have no such filter — a stray non-`.json` file sitting in an
+unclaimed `eventSheets/` or `families/` directory is still a legitimate "unmapped file
+here" finding, since those sections' index collectors filter to `.json` while
+`classifyFile`'s walk of them does not.
 
 **Editor-local artifacts are excluded from the walk, not just left unclassified.** `list-uncategorized` never presents these as unmapped work in the first place, via `@genvidtech/c3source`'s `isEditorLocalPath`:
 

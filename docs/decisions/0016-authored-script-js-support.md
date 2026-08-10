@@ -28,7 +28,7 @@ Four divergences exist between the two surfaces. This ADR closes **A** (the
 `.ts`/`.js` extension gap). The other three are out of scope and tracked
 separately: **B** — a granularity mismatch where `findScriptEntries` emits one
 directory entry for a nested non-layer dir where `listUncategorized`
-enumerates individual files (issue #35, pre-existing); **C** — a
+enumerates individual files (issue #51, pre-existing); **C** — a
 non-allowlisted `scripts/` subdirectory reported by `findScriptEntries` but
 never walked by `listUncategorized`'s four-entry `scriptSubdirs` allowlist
 (issue #46); **D** — a non-script file under an allowlisted script subdir,
@@ -132,10 +132,13 @@ not mistake the green suite for real-world validation of the admit path.
   appears." Call out in release notes.
 - **Known remaining divergence C** (issue #46, pinned by a regression test) —
   a non-allowlisted `scripts/` subdirectory; not an extension problem.
+  **Superseded by [[0017-script-surface-unification]]**
 - **Known remaining divergence D** (issue #47, pinned by a regression test) —
   a non-script file under an allowlisted script subdir; follows directly from
   [[0013-editor-local-exclusion-list-uncategorized]] decision #4.
-- **Divergence B** (granularity) is unaffected and stays tracked as issue #35.
+  **Superseded by [[0017-script-surface-unification]]**
+- **Divergence B** (granularity) is unaffected and stays tracked as issue #51.
+  **Superseded by [[0017-script-surface-unification]]**
 - **Inert overrides, second instance.** An `overrides` key on a `.js` that
   clause 1 now suppresses is permanently dead — same class of hazard as
   [[0013-editor-local-exclusion-list-uncategorized]]'s entry, zero corpus
