@@ -124,8 +124,7 @@ gap is not trivially closable by just deleting that guard.
 Closing this gap means distinguishing "directory key under a section whose walk
 emits directories" (`scripts/`, live) from "directory key under a section whose
 walk does not" (the other four, inert) — a per-section capability the current
-`FILE_TYPES` table does not encode. A follow-up issue is planned to close it; none
-has been filed yet.
+`FILE_TYPES` table does not encode. Filed as issue #54 to close it.
 
 ## Consequences
 
