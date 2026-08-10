@@ -1551,10 +1551,12 @@ describe("computeDomainData — canonical fixture", () => {
     // findScriptEntries collapses ts-defs/ to a single directory entry here
     // because FIXTURE_CONFIG claims it as a whole unit (scriptDirs: ["ts-defs"]),
     // not merely because ts-defs is not a LAYER_DIR -- a config claiming
-    // something strictly BELOW ts-defs/ now makes it descend instead (issue #51).
-    // listUncategorized's separate walk still enumerates all 56 files
-    // independently -- the two surfaces are not yet reconciled, and asserting
-    // 56 entries here would be wrong.
+    // something strictly BELOW ts-defs/ would make it descend instead.
+    // listUncategorized delegates to this same enumeration, so it reports the
+    // one collapsed entry too rather than the fixture's 56 underlying .d.ts
+    // files. That agreement is the point of ADR 0017; asserting 56 entries
+    // here would contradict it. The cross-surface invariant itself is pinned
+    // in scriptSurfaces.test.ts, not here.
     const scripts = byName("Gameplay").scripts;
 
     assert.deepEqual(scripts, [
