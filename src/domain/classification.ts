@@ -1,3 +1,4 @@
+import { isEditorLocalPath, C3_TS_DEFS_FOLDER } from "@genvidtech/c3source";
 import type { DomainConfig, DomainDefinition } from "./types.js";
 
 /** File type root directory and dir-array key, keyed by file type. */
@@ -155,4 +156,20 @@ export function isScriptSourceName(name: string): boolean {
  */
 export function isCompiledSibling(name: string, siblingNames: ReadonlySet<string>): boolean {
   return name.endsWith(".js") && siblingNames.has(name.slice(0, -".js".length) + ".ts");
+}
+
+/**
+ * A directory under scripts/ worth reporting as a classifiable entry.
+ * Excludes C3-editor-local dirs (uistate/) — never project source, never a domain.
+ * ts-defs/ is the deliberate exemption: it IS editor-generated, but this tool keeps
+ * it walked and reported so a project can index its generated .d.ts files into a
+ * domain via scriptDirs (see docs/decisions/0013-*.md). A naive
+ * !isEditorLocalPath(name) would drop it, because EDITOR_LOCAL_EXCLUSIONS.dirs
+ * contains "ts-defs".
+ *
+ * Two consumers: `findScriptEntries` (the scripts/ walk) and `listInertOverrides`
+ * (override-key inertness).
+ */
+export function isReportableScriptDir(name: string): boolean {
+  return !isEditorLocalPath(name) || name === C3_TS_DEFS_FOLDER;
 }
