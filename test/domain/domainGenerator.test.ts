@@ -14,6 +14,7 @@ import {
 import type { DomainConfig, DomainData } from "../../src/domain/types.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 import { createFile, makeObjectType, makeFamily, makeTempDir, removeTempDir } from "../syntheticProject.js";
+import { makeConfig } from "../domainModel.js";
 import type { EventSheet } from "@genvidtech/c3source";
 
 /** Create a minimal valid eventSheet JSON file. */
@@ -1404,6 +1405,89 @@ describe("findScriptEntries", () => {
     assert.isUndefined(result.find((entry) => entry.relativePath === "scripts/shared/uistate/"));
     assert.deepInclude(result, { relativePath: "scripts/shared/auth/", isDirectory: true });
   });
+
+  it("R-B2: with no config, collapses a directory with an unclaimed nested subtree to one entry", () => {
+    createFile(scriptsDir, "common/x.ts");
+    createFile(scriptsDir, "common/nested/y.ts");
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.deepEqual(result, [{ relativePath: "scripts/common/", isDirectory: true }]);
+  });
+
+  it("R-B3: a directory claimed as a unit (not strictly below) still collapses to one entry", () => {
+    createFile(scriptsDir, "ts-defs/objects.d.ts");
+    createFile(scriptsDir, "ts-defs/runtime/IRuntime.d.ts");
+    const config = makeConfig({ Core: { description: "Core", scriptDirs: ["ts-defs"] } });
+
+    const result = findScriptEntries(scriptsDir, config);
+
+    assert.deepEqual(result, [{ relativePath: "scripts/ts-defs/", isDirectory: true }]);
+  });
+
+  it("R-B4: descends multiple levels to reach a claim nested several directories down", () => {
+    createFile(scriptsDir, "a/b/c/x.ts");
+    createFile(scriptsDir, "a/b/y.ts");
+    const config = makeConfig({ A: { description: "A", scriptDirs: ["a/b/c"] } });
+
+    const result = findScriptEntries(scriptsDir, config);
+
+    assert.deepEqual(result, [
+      { relativePath: "scripts/a/b/c/", isDirectory: true },
+      { relativePath: "scripts/a/b/y.ts", isDirectory: false },
+    ]);
+  });
+
+  it("R-B5: an override under scripts/ is a claim too — no longer inert", () => {
+    createFile(scriptsDir, "other/deep/o.ts");
+    const config = makeConfig(
+      {},
+      { overrides: { "scripts/other/deep/o.ts": "A" } },
+    );
+
+    const result = findScriptEntries(scriptsDir, config);
+
+    assert.deepInclude(result, { relativePath: "scripts/other/deep/o.ts", isDirectory: false });
+  });
+
+  it("R-B6: a claim below ts-defs/ descends into it, but its uistate/ sibling still never enters", () => {
+    createFile(scriptsDir, "ts-defs/behaviors/T.d.ts");
+    createFile(scriptsDir, "ts-defs/uistate/x.d.ts");
+    const config = makeConfig({ Core: { description: "Core", scriptDirs: ["ts-defs/behaviors"] } });
+
+    const result = findScriptEntries(scriptsDir, config);
+
+    assert.deepInclude(result, { relativePath: "scripts/ts-defs/behaviors/", isDirectory: true });
+    assert.isFalse(result.some((e) => e.relativePath.includes("uistate")));
+  });
+});
+
+describe("computeDomainData — nested scriptDirs claim (issue #51)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("domainGenerator-nested-scripts-");
+    fs.mkdirSync(path.join(tmpDir, "eventSheets"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "layouts"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "scripts"), { recursive: true });
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  it("R-B1: a claim on a nested subtree descends instead of losing the subtree to a collapsed entry", () => {
+    createFile(tmpDir, "scripts/common/x.ts");
+    createFile(tmpDir, "scripts/common/nested/y.ts");
+    const config = makeConfig({ A: { description: "A", scriptDirs: ["common/nested"] } });
+
+    const result = computeDomainData(tmpDir, config);
+
+    const domainA = result.domains.find((d) => d.name === "A");
+    assert.isDefined(domainA);
+    assert.deepEqual(domainA!.scripts, [{ path: "scripts/common/nested/", isDirectory: true }]);
+    assert.deepEqual(result.unclassified, ["scripts/common/x.ts"]);
+  });
 });
 
 describe("computeDomainData — canonical fixture", () => {
@@ -1464,10 +1548,13 @@ describe("computeDomainData — canonical fixture", () => {
   });
 
   it("emits ts-defs as one classified directory entry, not one entry per file", () => {
-    // findScriptEntries does not recurse into ts-defs (it is not a LAYER_DIR),
-    // so the domain index carries a single directory entry. listUncategorized's
-    // separate walk does enumerate all 56 files -- two different code paths over
-    // the same directory, and asserting 56 entries here would be wrong.
+    // findScriptEntries collapses ts-defs/ to a single directory entry here
+    // because FIXTURE_CONFIG claims it as a whole unit (scriptDirs: ["ts-defs"]),
+    // not merely because ts-defs is not a LAYER_DIR -- a config claiming
+    // something strictly BELOW ts-defs/ now makes it descend instead (issue #51).
+    // listUncategorized's separate walk still enumerates all 56 files
+    // independently -- the two surfaces are not yet reconciled, and asserting
+    // 56 entries here would be wrong.
     const scripts = byName("Gameplay").scripts;
 
     assert.deepEqual(scripts, [
