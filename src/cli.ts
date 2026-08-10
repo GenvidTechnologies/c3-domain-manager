@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
-import { listUncategorized, listStaleOverrides } from "./domain/domainAnalysis.js";
+import { listUncategorized, listStaleOverrides, listInertOverrides } from "./domain/domainAnalysis.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
 import { computeAddonInventory, formatAddonInventoryReport } from "./domain/addonInventory.js";
 import { resolveLocations, resolveProjectRoot } from "./adapters/locations.js";
@@ -89,6 +89,15 @@ yargs(hideBin(process.argv))
       } else {
         console.log(`${stale.length} stale override(s):\n`);
         for (const s of stale) console.log(s);
+      }
+      const inert = listInertOverrides(loc.projectRoot, config);
+      if (inert.length > 0) {
+        if (stale.length > 0) console.log();
+        console.log(`${inert.length} inert override(s):\n`);
+        for (const i of inert) {
+          console.log(i.key);
+          console.log(`  ${i.reason}`);
+        }
       }
     },
   )
