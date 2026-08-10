@@ -38,3 +38,4 @@ Architecture Decision Records, numbered chronologically by when the decision was
 - `decisions/0015-shared-test-helper-modules.md` — generalize `fixtureHelpers.ts`'s flat, concern-named module shape into a convention; consolidate temp-dir, config, and domain-data test builders into `syntheticProject.ts`/`domainModel.ts` (issue #38)
 - `decisions/0016-authored-script-js-support.md` — the authored-script rule: admit `.ts`/`.js` scripts on both enumerating surfaces, suppressing a `.js` with a same-directory `.ts` sibling as compiled output (issue #39)
 - `decisions/0017-script-surface-unification.md` — delegate `list-uncategorized`'s `scripts/` walk to `findScriptEntries`, defining the command derivatively as the domain index's worklist (issues #47, #46, #51)
+- `decisions/0018-inert-override-detection.md` — add `listInertOverrides`, a per-section-derivative check for override keys that exist on disk but that no walk can ever produce (issue #36)

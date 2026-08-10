@@ -1,7 +1,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { openProject, find_all_files_path, isEditorLocalPath } from "@genvidtech/c3source";
-import { classifyFile, VALID_PREFIXES } from "./classification.js";
+import {
+  classifyFile,
+  VALID_PREFIXES,
+  FILE_TYPES,
+  isScriptSourceName,
+  isCompiledSibling,
+  isReportableScriptDir,
+} from "./classification.js";
 import { findScriptEntries } from "./domainGenerator.js";
 import type { DomainConfig } from "./types.js";
 
@@ -105,6 +112,124 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
   }
 
   return stale.sort();
+}
+
+/**
+ * Check each key in config.overrides — return keys that point to files that DO
+ * exist on disk, but that no enumeration this tool performs can ever produce
+ * (so the override can never take effect). Keys that fail `fs.existsSync` are
+ * `listStaleOverrides`' job and are filtered out here first, so a key is
+ * never reported by both functions.
+ *
+ * The check is derivative of each section's walk rules, not one flat
+ * predicate — four distinct reasons a key can be inert:
+ *
+ *   1. Editor-local (section-aware): a path segment the section's walk never
+ *      descends into or admits (`uistate/`, `*.uistate.json`, `tsconfig.json`,
+ *      and — outside `scripts/` only — `ts-defs/`; `scripts/` deliberately
+ *      keeps `ts-defs/` walked, ADR 0013).
+ *   2. Compiled sibling (`scripts/` only): a `.js` whose same-basename `.ts`
+ *      sits beside it — `findScriptEntries` suppresses it (ADR 0016).
+ *   3. Non-source extension (`scripts/` only): the basename isn't `.ts`/`.js`
+ *      — the other four sections admit any extension, so this class never
+ *      applies to them.
+ *   4. Trailing slash: `classifyFile` normalizes a walk's directory-entry
+ *      path before matching overrides, so a key that itself carries the
+ *      slash can never match.
+ */
+export function listInertOverrides(
+  rootDir: string,
+  config: DomainConfig,
+): Array<{ key: string; reason: string }> {
+  if (!config.overrides) return [];
+
+  const results: Array<{ key: string; reason: string }> = [];
+  const fileTypeKeys = Object.keys(FILE_TYPES) as Array<keyof typeof FILE_TYPES>;
+
+  for (const key of Object.keys(config.overrides)) {
+    const fullPath = path.join(rootDir, key);
+    if (!fs.existsSync(fullPath)) continue; // Missing keys are listStaleOverrides' job.
+
+    // Class 4 — trailing slash. Checked first, before any section-specific
+    // logic: a directory-shaped key must not feed its own name into the
+    // basename checks below.
+    if (key.endsWith("/")) {
+      results.push({
+        key,
+        reason:
+          "Key carries a trailing slash; classifyFile strips one trailing slash from a " +
+          "walk's directory-entry path before matching overrides, so a key that itself " +
+          "ends in '/' can never match — remove the trailing slash.",
+      });
+      continue;
+    }
+
+    // Resolve the section from the key's prefix. An unrecognized prefix is
+    // validateOverrideKeys' business, not this function's — skip silently.
+    const fileType = fileTypeKeys.find((t) => key.startsWith(FILE_TYPES[t].root));
+    if (!fileType) continue;
+
+    const root = FILE_TYPES[fileType].root;
+    const innerPath = key.slice(root.length);
+    const segments = innerPath.split("/");
+    const basename = segments[segments.length - 1];
+    const dirSegments = segments.slice(0, -1);
+
+    // Class 1 — editor-local, section-aware. Directory segments: scripts/
+    // exempts ts-defs/ (isReportableScriptDir); the other four sections don't
+    // (isEditorLocalPath). Basename: isEditorLocalPath in all five sections.
+    const inertDirSegment = dirSegments.find((seg) =>
+      fileType === "script" ? !isReportableScriptDir(seg) : isEditorLocalPath(seg),
+    );
+    if (inertDirSegment !== undefined) {
+      results.push({
+        key,
+        reason:
+          `Directory segment '${inertDirSegment}' is a C3-editor-local artifact that the ` +
+          `${root} walk never descends into, so this key can never be produced.`,
+      });
+      continue;
+    }
+
+    if (isEditorLocalPath(basename)) {
+      results.push({
+        key,
+        reason:
+          `'${basename}' is a C3-editor-local artifact (uistate output, or tsconfig.json) ` +
+          `that the ${root} walk always excludes, so this key can never be produced.`,
+      });
+      continue;
+    }
+
+    // Classes 2 and 3 — scripts/ only, files only. A key naming a real
+    // directory on disk is live (findScriptEntries collapses it to a single
+    // directory entry), so these file-only rules must not apply to it.
+    if (fileType === "script" && !fs.statSync(fullPath).isDirectory()) {
+      if (!isScriptSourceName(basename)) {
+        results.push({
+          key,
+          reason:
+            `'${basename}' has no .ts or .js extension; the scripts/ walk only admits ` +
+            `authored script source, so this key can never be produced.`,
+        });
+        continue;
+      }
+
+      const siblingNames = new Set(fs.readdirSync(path.dirname(fullPath)));
+      if (isCompiledSibling(basename, siblingNames)) {
+        results.push({
+          key,
+          reason:
+            `'${basename}' is compiled output of a co-located .ts file with the same ` +
+            `basename; the scripts/ walk suppresses the compiled sibling, so this key can ` +
+            `never be produced.`,
+        });
+        continue;
+      }
+    }
+  }
+
+  return results.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
 /**
