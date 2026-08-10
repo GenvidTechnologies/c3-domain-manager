@@ -89,22 +89,20 @@ describe("hasClaimBelow", () => {
   });
 });
 
-// --- Cross-surface agreement (issue #39) -----------------------------------
+// --- Cross-surface agreement (ADR 0017) -------------------------------------
 //
-// This block is deliberately RED. `listUncategorized` (domainAnalysis.ts) and
-// `findScriptEntries` (domainGenerator.ts) disagree about .js script files:
-// `listUncategorized`'s scriptSubdirs walk applies no extension filter, while
-// `findScriptEntries` only ever pushes a file entry for names ending in ".ts".
-// A later task fixes that divergence and turns this block green — do not
-// "fix" it by editing src/ here; it exists to pin the bug and prove the test
-// can actually detect it (TDD falsifiability gate).
-describe("listUncategorized vs findScriptEntries — cross-surface agreement (issue #39)", () => {
+// `listUncategorized` now delegates its scripts/ walk to `findScriptEntries`
+// (the same enumeration `computeDomainData` uses), so the two surfaces agree
+// by construction over the whole scripts/ tree — not just the .ts/.js file
+// overlap region a prior version of this block used to carve out (see
+// issue #51).
+describe("listUncategorized vs findScriptEntries — full cross-surface agreement", () => {
   let tmpDir: string;
   let scriptsDir: string;
 
   // A domain config that classifies nothing (no scriptDirs at all), so
   // listUncategorized's *unclassified* output is directly comparable to
-  // findScriptEntries' *all-entries* output — see subtlety (a) in the task.
+  // findScriptEntries' *all-entries* output.
   const config = makeConfig({
     Placeholder: { description: "claims nothing — no scriptDirs" },
   });
@@ -113,52 +111,47 @@ describe("listUncategorized vs findScriptEntries — cross-surface agreement (is
     tmpDir = makeTempDir("scriptSurfaces-agreement-");
     scriptsDir = path.join(tmpDir, "scripts");
 
-    // A compiled pair at the scripts/ root.
-    createFile(tmpDir, "scripts/main.ts");
-    createFile(tmpDir, "scripts/main.js");
-    // Root-only .js, no .ts sibling.
-    createFile(tmpDir, "scripts/onlyjs.js");
-    // A compiled pair inside a layer dir.
+    createFile(tmpDir, "scripts/root.ts");
+    createFile(tmpDir, "scripts/readme.md");
     createFile(tmpDir, "scripts/shared/a.ts");
-    createFile(tmpDir, "scripts/shared/a.js");
-    // Layer-dir-only .js, no .ts sibling.
-    createFile(tmpDir, "scripts/shared/onlyjs.js");
-    // Another layer dir, same compiled-pair shape.
-    createFile(tmpDir, "scripts/c3-runtime/c.ts");
-    createFile(tmpDir, "scripts/c3-runtime/c.js");
+    createFile(tmpDir, "scripts/shared/data.json");
+    createFile(tmpDir, "scripts/shared/sub/b.ts");
+    createFile(tmpDir, "scripts/shared/sub/deep/c.ts");
+    createFile(tmpDir, "scripts/common/x.ts");
+    createFile(tmpDir, "scripts/common/notes.md");
+    createFile(tmpDir, "scripts/common/nested/y.ts");
+    createFile(tmpDir, "scripts/c3-runtime/r.ts");
+    createFile(tmpDir, "scripts/other/o.ts");
+    createFile(tmpDir, "scripts/other/data.json");
+    createFile(tmpDir, "scripts/other/deeper/p.ts");
+    createFile(tmpDir, "scripts/ts-defs/objects.d.ts");
+    createFile(tmpDir, "scripts/ts-defs/runtime/IRuntime.d.ts");
   });
 
   afterEach(() => {
     removeTempDir(tmpDir);
   });
 
-  it("assumption: the config classifies no scripts/ path (required for the two surfaces to be comparable)", () => {
-    assert.isNull(classifyFile("scripts/main.ts", "script", config));
-    assert.isNull(classifyFile("scripts/shared/a.ts", "script", config));
-    assert.isNull(classifyFile("scripts/c3-runtime/c.ts", "script", config));
-  });
-
-  it("agrees with findScriptEntries over the .ts/.js file overlap region", () => {
-    // Restricted to the overlap region on purpose, not out of laziness: a
-    // nested non-layer dir (e.g. scripts/shared/sub/b.ts) makes
-    // findScriptEntries emit a single *directory* entry ("scripts/shared/sub/")
-    // where listUncategorized enumerates individual files instead — a known
-    // granularity divergence tracked by issue #35, out of scope for this
-    // .js/.ts agreement test. Do not widen this filter to "fix" that.
-    const OVERLAP_REGION = /^scripts\/(?:(?:shared|c3-runtime)\/)*[^/]+$/;
-    const isScriptFileName = (p: string) => p.endsWith(".ts") || p.endsWith(".js");
-
-    const uncategorized = listUncategorized(tmpDir, config)
-      .filter((p) => OVERLAP_REGION.test(p) && isScriptFileName(p))
+  it("agree over the whole scripts/ tree, including collapsed directory entries", () => {
+    const uncategorizedScripts = listUncategorized(tmpDir, config)
+      .filter((p) => p.startsWith("scripts/"))
       .sort();
-
-    const entries = findScriptEntries(scriptsDir)
-      .filter((entry) => !entry.isDirectory)
+    const entryPaths = findScriptEntries(scriptsDir, config)
       .map((entry) => entry.relativePath)
-      .filter((p) => OVERLAP_REGION.test(p) && isScriptFileName(p))
       .sort();
 
-    assert.deepEqual(uncategorized, entries);
+    const expected = [
+      "scripts/c3-runtime/r.ts",
+      "scripts/common/",
+      "scripts/other/",
+      "scripts/root.ts",
+      "scripts/shared/a.ts",
+      "scripts/shared/sub/",
+      "scripts/ts-defs/",
+    ];
+
+    assert.deepEqual(uncategorizedScripts, entryPaths);
+    assert.deepEqual(entryPaths, expected);
   });
 });
 
@@ -234,58 +227,53 @@ describe("authored-script rule — both surfaces (issue #39)", () => {
 
   it("clause 1 is per-directory — a same-named .js in a sibling dir is NOT suppressed", () => {
     createFile(tmpDir, "scripts/shared/a.ts");
-    createFile(tmpDir, "scripts/common/a.js");
-    // Deliberately no scripts/common/a.ts.
+    createFile(tmpDir, "scripts/c3-runtime/a.js");
+    // Deliberately no scripts/c3-runtime/a.ts. Both dirs are LAYER_DIRS entries
+    // (recursed, file-level granularity), so the file-level check stays observable.
 
     const uncategorized = listUncategorized(tmpDir, config);
-    assert.include(uncategorized, "scripts/common/a.js");
+    assert.include(uncategorized, "scripts/c3-runtime/a.js");
   });
 
   it(".d.ts is not a compiled-sibling suppressor", () => {
-    createFile(tmpDir, "scripts/ts-defs/Player.d.ts");
-    createFile(tmpDir, "scripts/ts-defs/Player.js");
+    createFile(tmpDir, "scripts/shared/Player.d.ts");
+    createFile(tmpDir, "scripts/shared/Player.js");
 
     const uncategorized = listUncategorized(tmpDir, config);
-    assert.include(uncategorized, "scripts/ts-defs/Player.js");
+    assert.include(uncategorized, "scripts/shared/Player.js");
   });
 
-  // Pinned divergence D (ADR 0016): collectScriptFiles (listUncategorized's
-  // scriptSubdirs walk) applies no extension filter at all — by design, per
-  // ADR 0013 decision #4, so a stray non-script file under scripts/shared/
-  // still surfaces as an "unmapped file here" finding. findScriptEntries only
-  // ever emits script-source entries, so a non-script file is invisible to
-  // it. This is a decision, not a bug.
-  it("pinned divergence D — a non-script file under scripts/shared/ is reported by listUncategorized but not findScriptEntries", () => {
+  // R-D1 (ADR 0017 supersedes pinned divergence D): now that listUncategorized
+  // delegates its scripts/ walk to findScriptEntries, a non-script file is
+  // invisible to BOTH surfaces rather than being an "unmapped file here"
+  // finding unique to listUncategorized. scripts/shared/a.ts is a positive
+  // control proving the walk under scripts/shared/ actually ran.
+  it("R-D1 — a non-script file under scripts/shared/ is reported by neither surface", () => {
     createFile(tmpDir, "scripts/shared/data.json");
+    createFile(tmpDir, "scripts/shared/a.ts");
 
     const uncategorized = listUncategorized(tmpDir, config);
-    assert.include(uncategorized, "scripts/shared/data.json");
+    assert.notInclude(uncategorized, "scripts/shared/data.json");
+    assert.include(uncategorized, "scripts/shared/a.ts");
 
     const entries = findScriptEntries(scriptsDir)
       .filter((e) => !e.isDirectory)
       .map((e) => e.relativePath);
     assert.notInclude(entries, "scripts/shared/data.json");
+    assert.include(entries, "scripts/shared/a.ts");
   });
 
-  // Pinned divergence C, tracked by issue #46, deliberately out of scope for
-  // issue #39: listUncategorized's scriptSubdirs walk only ever descends into
-  // a four-entry allowlist of scripts/ subdirectories ("shared",
-  // "c3-runtime", "common", C3_TS_DEFS_FOLDER) plus the scripts/ root itself.
-  // findScriptEntries walks the whole scripts/ tree and, for any other
-  // reportable directory, emits a directory entry for it. ADR 0013 explicitly
-  // declined to touch the allowlist ("zero observed corpus impact...
-  // explicitly pinned by existing tests"), so scripts/other/ falls outside
-  // listUncategorized's walk entirely while findScriptEntries still reports
-  // it. This is not an extension problem — it would diverge identically in a
-  // project containing no .js at all — which is what distinguishes it from
-  // what #39 fixed.
-  it("pinned divergence C (issue #46) — a non-allowlisted scripts/ subdirectory is reported by findScriptEntries but not listUncategorized", () => {
+  // R-C1 (ADR 0017 supersedes pinned divergence C, issue #46): listUncategorized
+  // no longer hand-rolls a four-entry scripts/ subdirectory allowlist — it
+  // delegates to findScriptEntries, which walks the whole scripts/ tree — so
+  // an unclaimed non-layer subdirectory is now reported by both surfaces.
+  it("R-C1 — an unclaimed non-layer scripts/ subdirectory is reported by both surfaces", () => {
     createFile(tmpDir, "scripts/other/o.ts");
 
-    const entries = findScriptEntries(scriptsDir);
+    const entries = findScriptEntries(scriptsDir, config);
     assert.deepInclude(entries, { relativePath: "scripts/other/", isDirectory: true });
 
     const uncategorized = listUncategorized(tmpDir, config);
-    assert.isFalse(uncategorized.some((p) => p.startsWith("scripts/other/")));
+    assert.include(uncategorized, "scripts/other/");
   });
 });
