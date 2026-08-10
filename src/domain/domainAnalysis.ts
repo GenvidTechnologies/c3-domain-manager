@@ -34,8 +34,14 @@ function collectSourceFiles(dir: string, baseDir: string): string[] {
 }
 
 /**
- * Scan eventSheets/, layouts/, and scripts/ directories and return files
- * that classifyFile() returns null for (sorted).
+ * Scan eventSheets/, layouts/, scripts/, objectTypes/ and families/ and return the
+ * paths classifyFile() returns null for (sorted).
+ *
+ * The four non-script sections are walked here per file. scripts/ is not: it delegates
+ * to findScriptEntries, the same enumeration computeDomainData builds DomainData from,
+ * so this command reports exactly what the generated index would leave unclassified
+ * (ADR 0017). That means a scripts/ result may be a *directory* path with a trailing
+ * slash, where the whole directory is attributed as a unit.
  */
 export function listUncategorized(rootDir: string, config: DomainConfig): string[] {
   const uncategorized: string[] = [];
