@@ -5,6 +5,7 @@ import {
   isScriptSourceName,
   isCompiledSibling,
   classifyFile,
+  hasClaimBelow,
 } from "../../src/domain/classification.js";
 import { listUncategorized } from "../../src/domain/domainAnalysis.js";
 import { findScriptEntries } from "../../src/domain/domainGenerator.js";
@@ -48,6 +49,43 @@ describe("isCompiledSibling", () => {
 
   it("never suppresses a .ts file", () => {
     assert.isFalse(isCompiledSibling("a.ts", new Set(["a.ts", "a.js"])));
+  });
+});
+
+describe("hasClaimBelow", () => {
+  it("R-P1 — a claim strictly below innerPath returns true", () => {
+    const config = makeConfig({
+      A: { description: "d", scriptDirs: ["common/nested"] },
+    });
+    assert.isTrue(hasClaimBelow("common", "script", config));
+  });
+
+  it("R-P2 — a claim exactly at innerPath (claimed as a unit, not below) returns false", () => {
+    const config = makeConfig({
+      A: { description: "d", scriptDirs: ["ts-defs"] },
+    });
+    assert.isFalse(hasClaimBelow("ts-defs", "script", config));
+  });
+
+  it("R-P3 — a sibling directory that merely shares innerPath as a string prefix is excluded (anchoring bug guard)", () => {
+    const config = makeConfig({
+      A: { description: "d", scriptDirs: ["common2/x"] },
+    });
+    assert.isFalse(hasClaimBelow("common", "script", config));
+  });
+
+  it("R-P4 — reads sharedSubdomains and overrides, not just domains", () => {
+    const viaSharedSubdomains = makeConfig(
+      { A: { description: "d" } },
+      { sharedSubdomains: { S: { description: "d", scriptDirs: ["common/nested"] } } },
+    );
+    assert.isTrue(hasClaimBelow("common", "script", viaSharedSubdomains));
+
+    const viaOverrides = makeConfig(
+      { A: { description: "d" } },
+      { overrides: { "scripts/common/nested/y.ts": "A" } },
+    );
+    assert.isTrue(hasClaimBelow("common", "script", viaOverrides));
   });
 });
 

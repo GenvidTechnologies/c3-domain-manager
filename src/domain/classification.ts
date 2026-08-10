@@ -76,6 +76,46 @@ export function classifyFile(
 }
 
 /**
+ * True when some `*Dirs` entry or `overrides` key claims a path strictly BELOW
+ * `innerPath` — i.e. emitting a single directory entry for `innerPath` would
+ * swallow that claim. Checks domains, sharedSubdomains, and overrides.
+ *
+ * The `innerPath + "/"` anchoring matters: a bare `startsWith(innerPath)` would
+ * wrongly match a sibling directory that merely shares `innerPath` as a string
+ * prefix (e.g. "common2/x" against inner path "common") rather than one nested
+ * strictly beneath it.
+ */
+export function hasClaimBelow(
+  innerPath: string,
+  fileType: "eventSheet" | "layout" | "script" | "objectType" | "family",
+  config: DomainConfig,
+): boolean {
+  const { root, dirKey } = FILE_TYPES[fileType];
+  const prefix = innerPath + "/";
+  const claims: string[] = [];
+
+  for (const domainDef of Object.values(config.domains)) {
+    const dirs = domainDef[dirKey] as string[] | undefined;
+    if (dirs) claims.push(...dirs);
+  }
+
+  if (config.sharedSubdomains) {
+    for (const subdomainDef of Object.values(config.sharedSubdomains)) {
+      const dirs = subdomainDef[dirKey] as string[] | undefined;
+      if (dirs) claims.push(...dirs);
+    }
+  }
+
+  if (config.overrides) {
+    for (const key of Object.keys(config.overrides)) {
+      if (key.startsWith(root)) claims.push(key.slice(root.length));
+    }
+  }
+
+  return claims.some((claim) => claim.startsWith(prefix));
+}
+
+/**
  * Script source extensions. Construct 3 supports both; which one C3 *loads* is a
  * function of the editor release (r39700 projects declare the compiled .js in
  * project.c3proj, r47604+ declare the .ts). This tool maps *authored source*, so
