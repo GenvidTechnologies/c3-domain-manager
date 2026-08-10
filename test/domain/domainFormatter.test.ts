@@ -154,6 +154,23 @@ describe("domainFormatter", () => {
       const result = classifyFile("objectTypes/Common/SharedObject.json", "objectType", config);
       assert.equal(result, "Shared");
     });
+
+    it("tolerates a trailing slash on an overrides key, matching the slash-less form", () => {
+      const config = makeConfig({}, { overrides: { "scripts/other": "A" } });
+      assert.equal(classifyFile("scripts/other/", "script", config), "A");
+      assert.equal(classifyFile("scripts/other", "script", config), "A");
+    });
+
+    it("tolerates a trailing slash on a scriptDirs directory-entry match", () => {
+      const config = makeConfig({
+        A: {
+          description: "Domain A",
+          scriptDirs: ["other"],
+        },
+      });
+      const result = classifyFile("scripts/other/", "script", config);
+      assert.equal(result, "A");
+    });
   });
 
   describe("extractIncludes (c3source) → include names", () => {

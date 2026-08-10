@@ -25,7 +25,7 @@ import type {
   Condition,
   ScriptAction,
 } from "@genvidtech/c3source";
-import { classifyFile, isScriptSourceName, isCompiledSibling } from "./classification.js";
+import { classifyFile, isScriptSourceName, isCompiledSibling, hasClaimBelow } from "./classification.js";
 import { computeHubDomains } from "./coupling.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
 import type { DomainConfig, DomainData, FunctionDef } from "./types.js";
@@ -151,7 +151,11 @@ function isReportableScriptDir(name: string): boolean {
   return !isEditorLocalPath(name) || name === C3_TS_DEFS_FOLDER;
 }
 
-export function findScriptEntries(scriptsDir: string): Array<{ relativePath: string; isDirectory: boolean }> {
+export function findScriptEntries(
+  scriptsDir: string,
+  config?: DomainConfig,
+  log: Logger = () => {},
+): Array<{ relativePath: string; isDirectory: boolean }> {
   const entries: Array<{ relativePath: string; isDirectory: boolean }> = [];
 
   // A missing scripts/ dir is legitimate (a C3 project may have no scripts) —
@@ -169,10 +173,21 @@ export function findScriptEntries(scriptsDir: string): Array<{ relativePath: str
       const stats = fs.statSync(fullPath);
 
       if (stats.isDirectory()) {
+        // isReportableScriptDir gates descent as well as emission — a claim
+        // below an editor-local directory must NOT force entry into it
+        // (scripts/ts-defs/uistate/ stays out even when ts-defs/behaviors is
+        // claimed; ADR 0013 Compromise #1's ts-defs exemption still applies).
+        if (!isReportableScriptDir(name)) continue;
+
         if (LAYER_DIRS.includes(name)) {
           // Recurse into layer dirs — enumerate their children instead
           scanDir(fullPath, `${prefix}${name}/`);
-        } else if (isReportableScriptDir(name)) {
+        } else if (config && hasClaimBelow(`${prefix}${name}`, "script", config)) {
+          // The config claims something strictly below this directory — a
+          // single collapsed entry here would swallow that claim (issue #51).
+          log(`  Descending scripts/${prefix}${name}/ — config claims below it`);
+          scanDir(fullPath, `${prefix}${name}/`);
+        } else {
           entries.push({ relativePath: `scripts/${prefix}${name}/`, isDirectory: true });
         }
       } else if (
@@ -216,7 +231,7 @@ export function computeDomainData(
   const project = openProject(rootDir);
   const eventSheetPaths = project.findAllEventSheets();
   const layoutPaths = project.findAllLayouts();
-  const scriptEntries = findScriptEntries(project.scriptsDir);
+  const scriptEntries = findScriptEntries(project.scriptsDir, config, log);
 
   log(
     `Found ${eventSheetPaths.length} eventSheets, ${layoutPaths.length} layouts, ${scriptEntries.length} script entries.`,
@@ -405,10 +420,7 @@ export function computeDomainData(
 
   // Classify scripts
   for (const entry of scriptEntries) {
-    const lookupPath = entry.isDirectory
-      ? entry.relativePath.replace(/\/$/, "")
-      : entry.relativePath;
-    const domain = classifyFile(lookupPath, "script", config);
+    const domain = classifyFile(entry.relativePath, "script", config);
     if (domain) {
       domainDataMap.get(domain)!.scripts.push({ path: entry.relativePath, isDirectory: entry.isDirectory });
     } else {

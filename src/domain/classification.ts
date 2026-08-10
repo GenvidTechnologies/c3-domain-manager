@@ -22,17 +22,21 @@ export function classifyFile(
   fileType: "eventSheet" | "layout" | "script" | "objectType" | "family",
   config: DomainConfig,
 ): string | null {
+  // Tolerate a single trailing slash (directory entries, e.g. "scripts/other/")
+  // so callers no longer have to strip it themselves before calling in.
+  const normalizedPath = relativePath.endsWith("/") ? relativePath.slice(0, -1) : relativePath;
+
   // 1. Check overrides (exact match, highest priority)
-  if (config.overrides && relativePath in config.overrides) {
-    return config.overrides[relativePath];
+  if (config.overrides && normalizedPath in config.overrides) {
+    return config.overrides[normalizedPath];
   }
 
   // 2. Strip the file type root prefix to get the inner path
   const root = FILE_TYPES[fileType].root;
-  if (!relativePath.startsWith(root)) {
+  if (!normalizedPath.startsWith(root)) {
     return null;
   }
-  const innerPath = relativePath.slice(root.length); // e.g. "Login/LoginEvents.json"
+  const innerPath = normalizedPath.slice(root.length); // e.g. "Login/LoginEvents.json"
 
   // 3. Check domain directory arrays — longest prefix wins
   const dirKey = FILE_TYPES[fileType].dirKey;
@@ -73,6 +77,46 @@ export function classifyFile(
   }
 
   return bestMatch;
+}
+
+/**
+ * True when some `*Dirs` entry or `overrides` key claims a path strictly BELOW
+ * `innerPath` — i.e. emitting a single directory entry for `innerPath` would
+ * swallow that claim. Checks domains, sharedSubdomains, and overrides.
+ *
+ * The `innerPath + "/"` anchoring matters: a bare `startsWith(innerPath)` would
+ * wrongly match a sibling directory that merely shares `innerPath` as a string
+ * prefix (e.g. "common2/x" against inner path "common") rather than one nested
+ * strictly beneath it.
+ */
+export function hasClaimBelow(
+  innerPath: string,
+  fileType: "eventSheet" | "layout" | "script" | "objectType" | "family",
+  config: DomainConfig,
+): boolean {
+  const { root, dirKey } = FILE_TYPES[fileType];
+  const prefix = innerPath + "/";
+  const claims: string[] = [];
+
+  for (const domainDef of Object.values(config.domains)) {
+    const dirs = domainDef[dirKey] as string[] | undefined;
+    if (dirs) claims.push(...dirs);
+  }
+
+  if (config.sharedSubdomains) {
+    for (const subdomainDef of Object.values(config.sharedSubdomains)) {
+      const dirs = subdomainDef[dirKey] as string[] | undefined;
+      if (dirs) claims.push(...dirs);
+    }
+  }
+
+  if (config.overrides) {
+    for (const key of Object.keys(config.overrides)) {
+      if (key.startsWith(root)) claims.push(key.slice(root.length));
+    }
+  }
+
+  return claims.some((claim) => claim.startsWith(prefix));
 }
 
 /**

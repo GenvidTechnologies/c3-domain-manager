@@ -1,17 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
-  openProject,
-  find_all_files_path,
-  isEditorLocalPath,
-  C3_TS_DEFS_FOLDER,
-} from "@genvidtech/c3source";
-import {
-  classifyFile,
-  VALID_PREFIXES,
-  isScriptSourceName,
-  isCompiledSibling,
-} from "./classification.js";
+import { openProject, find_all_files_path, isEditorLocalPath } from "@genvidtech/c3source";
+import { classifyFile, VALID_PREFIXES } from "./classification.js";
+import { findScriptEntries } from "./domainGenerator.js";
 import type { DomainConfig } from "./types.js";
 
 /**
@@ -42,53 +33,15 @@ function collectSourceFiles(dir: string, baseDir: string): string[] {
   return walkSource(dir).map(relativize(baseDir));
 }
 
-/** Clause 1, applied over absolute paths: drop each X.js whose X.ts sibling sits in
- *  the SAME directory. Sets are built per-dirname — a flat set would cross-suppress. */
-function suppressCompiledSiblings(absPaths: string[]): string[] {
-  const byDir = new Map<string, Set<string>>();
-  for (const p of absPaths) {
-    const dir = path.dirname(p);
-    let names = byDir.get(dir);
-    if (!names) byDir.set(dir, (names = new Set()));
-    names.add(path.basename(p));
-  }
-  return absPaths.filter(
-    (p) => !isCompiledSibling(path.basename(p), byDir.get(path.dirname(p))!),
-  );
-}
-
-/** Script-subdirectory variant of collectSourceFiles. Same walk and the SAME
- *  no-extension-filter policy (ADR 0013 #4 — a stray .md under scripts/common/ is
- *  still a legitimate "unmapped file here" finding), plus clause 1. Deliberately
- *  does NOT apply clause 2; see ADR 0016's "divergence D" consequence. */
-function collectScriptFiles(dir: string, baseDir: string): string[] {
-  return suppressCompiledSiblings(walkSource(dir)).map(relativize(baseDir));
-}
-
 /**
- * Collect root-level script files in a directory (non-recursive), returning paths
- * relative to baseDir. `descend: () => false` expresses the non-recursion: the
- * allowlisted script subdirs are walked separately below, and recursing here would
- * both double-report them and pull in non-allowlisted subdirs.
+ * Scan eventSheets/, layouts/, scripts/, objectTypes/ and families/ and return the
+ * paths classifyFile() returns null for (sorted).
  *
- * Applies BOTH clauses of the authored-script rule (ADR 0016): .ts|.js admission,
- * then compiled-sibling suppression. The sibling test cannot live in the predicate —
- * find_all_files_path hands it a bare basename with no directory context — so it is
- * a post-filter over the absolute paths the walk returns.
- */
-function collectRootScriptFiles(dir: string, baseDir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  const found = find_all_files_path(
-    dir,
-    (name) => isScriptSourceName(name) && !isEditorLocalPath(name),
-    () => false,
-  );
-  return suppressCompiledSiblings(found).map(relativize(baseDir));
-}
-
-/**
- * Scan eventSheets/, layouts/, and scripts/ directories and return files
- * that classifyFile() returns null for (sorted).
+ * The four non-script sections are walked here per file. scripts/ is not: it delegates
+ * to findScriptEntries, the same enumeration computeDomainData builds DomainData from,
+ * so this command reports exactly what the generated index would leave unclassified
+ * (ADR 0017). That means a scripts/ result may be a *directory* path with a trailing
+ * slash, where the whole directory is attributed as a unit.
  */
 export function listUncategorized(rootDir: string, config: DomainConfig): string[] {
   const uncategorized: string[] = [];
@@ -110,24 +63,11 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
     }
   }
 
-  // Scripts: walk shared/, c3-runtime/, common/, ts-defs/ + root-level .ts files
-  // ts-defs/ is C3-generated but deliberately walked and reported: a project can
-  // index its generated .d.ts files into a domain via scriptDirs (see ADR 0013).
-  const scriptSubdirs = ["shared", "c3-runtime", "common", C3_TS_DEFS_FOLDER];
-  for (const subdir of scriptSubdirs) {
-    const files = collectScriptFiles(path.join(project.scriptsDir, subdir), rootDir);
-    for (const file of files) {
-      if (classifyFile(file, "script", config) === null) {
-        uncategorized.push(file);
-      }
-    }
-  }
-
-  // Root-level script files in scripts/
-  const rootScriptFiles = collectRootScriptFiles(project.scriptsDir, rootDir);
-  for (const file of rootScriptFiles) {
-    if (classifyFile(file, "script", config) === null) {
-      uncategorized.push(file);
+  // Scripts: delegate to findScriptEntries — the same enumeration domainGenerator
+  // uses to build DomainData — so both readers agree on what scripts/ contains.
+  for (const entry of findScriptEntries(project.scriptsDir, config)) {
+    if (classifyFile(entry.relativePath, "script", config) === null) {
+      uncategorized.push(entry.relativePath);
     }
   }
 

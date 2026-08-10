@@ -10,6 +10,7 @@ import {
   validateOverrideValues,
 } from "../../src/domain/domainAnalysis.js";
 import type { DomainConfig } from "../../src/domain/types.js";
+import { computeDomainData } from "../../src/domain/domainGenerator.js";
 import { fixtureProjectPath, FIXTURE_CONFIG } from "../fixtureHelpers.js";
 import { createFile, makeTempDir, removeTempDir } from "../syntheticProject.js";
 import { makeConfig } from "../domainModel.js";
@@ -160,10 +161,11 @@ describe("domainAnalysis", () => {
       assert.deepEqual(result, ["scripts/importsForEvents.ts", "scripts/main.ts"]);
     });
 
-    it("does not recurse into non-standard script subdirectories", () => {
-      // Files in scripts/SomeOtherDir/ should NOT be scanned
+    it("reports an unclaimed non-standard script subdirectory as a collapsed directory entry", () => {
+      // Files in scripts/SomeOtherDir/ collapse to a single directory entry —
+      // findScriptEntries has no allowlist, so nothing below it is claimed.
       createFile(tmpDir, "scripts/SomeOtherDir/foo.ts");
-      // Files in scripts/shared/ SHOULD be scanned
+      // Files in scripts/shared/ ARE scanned (a LAYER_DIRS entry) and classified.
       createFile(tmpDir, "scripts/shared/utils/helper.ts");
 
       const config = makeConfig({
@@ -171,8 +173,9 @@ describe("domainAnalysis", () => {
       });
 
       const result = listUncategorized(tmpDir, config);
-      // Only shared/utils/helper.ts is scanned (and classified). SomeOtherDir is ignored.
-      assert.deepEqual(result, []);
+      // shared/utils/helper.ts is classified. SomeOtherDir/ is unclaimed, so it
+      // collapses to a single directory entry (see ADR 0017).
+      assert.deepEqual(result, ["scripts/SomeOtherDir/"]);
     });
 
     it("returns uncategorized object types and families", () => {
@@ -244,12 +247,9 @@ describe("domainAnalysis", () => {
       });
 
       const result = listUncategorized(tmpDir, config);
-      assert.deepEqual(result, [
-        "scripts/main.ts",
-        "scripts/onlyjs.js",
-        "scripts/ts-defs/Player.d.ts",
-        "scripts/ts-defs/objects.d.ts",
-      ]);
+      // ts-defs/ is unclaimed here (no scriptDirs at all), so its two files
+      // collapse to a single directory entry (see ADR 0017).
+      assert.deepEqual(result, ["scripts/main.ts", "scripts/onlyjs.js", "scripts/ts-defs/"]);
     });
 
     it("still classifies ts-defs into a domain that claims it in scriptDirs (issue #33)", () => {
@@ -268,6 +268,25 @@ describe("domainAnalysis", () => {
 
       const result = listUncategorized(tmpDir, config);
       assert.deepEqual(result, ["scripts/main.ts", "scripts/onlyjs.js"]);
+    });
+
+    it("R-D2 — the four non-script section walks still report a stray file individually, unaffected by the scripts/ delegation", () => {
+      createFile(tmpDir, "eventSheets/Orphan/notes.md");
+      createFile(tmpDir, "families/Orphan/notes.md");
+      createFile(tmpDir, "layouts/Orphan/r.txt");
+      createFile(tmpDir, "objectTypes/Orphan/i.png");
+
+      const config = makeConfig({
+        Auth: { description: "Auth" },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.deepEqual(result, [
+        "eventSheets/Orphan/notes.md",
+        "families/Orphan/notes.md",
+        "layouts/Orphan/r.txt",
+        "objectTypes/Orphan/i.png",
+      ]);
     });
   });
 });
@@ -379,28 +398,25 @@ describe("listUncategorized — canonical fixture", () => {
     assert.deepEqual(result, ["layouts/Templates Layout.json", "objectTypes/TextInput.json"]);
   });
 
-  it("does not report scripts/tsconfig.json or any ts-defs declaration file", () => {
+  it("does not report scripts/tsconfig.json, and classifies ts-defs/ as a directory entry on Gameplay", () => {
+    // tsconfig.json never reaches classifyFile at all: the root-scripts walk
+    // filters to .ts|.js, and isEditorLocalPath excludes it by name.
     const result = listUncategorized(root, FIXTURE_CONFIG);
-
-    // Both are absent, but for different reasons, and the distinction is the
-    // point of ADR 0013:
-    //
-    //   tsconfig.json  never reaches classifyFile at all. The root-scripts walk
-    //                  filters to .ts|.js, and isEditorLocalPath excludes it by name.
-    //   ts-defs/*.d.ts DO reach classifyFile -- all 56 of them, via the recursive
-    //                  walk -- and are classified into Gameplay by
-    //                  scriptDirs: ["ts-defs"]. They are absent because they were
-    //                  classified, not because they were dropped.
-    //
-    // The walked-not-dropped half is asserted positively in domainGenerator's
-    // fixture tests, where ts-defs/ shows up as a classified script entry. Here
-    // it could only be asserted as an absence, which would hold just as well if
-    // the walk had skipped the directory entirely.
     assert.notInclude(result, "scripts/tsconfig.json");
     assert.isFalse(
-      result.some((p) => p.startsWith("scripts/ts-defs/")),
-      "ts-defs files are classified into Gameplay, so none are uncategorized",
+      result.some((p) => p.startsWith("scripts/")),
+      "nothing scripts/-rooted is left uncategorized in the fixture",
     );
+
+    // Positive assertion (ADR 0014 — don't assert the absence of something the
+    // fixture never had): ts-defs/ is claimed as a unit by Gameplay's
+    // scriptDirs: ["ts-defs"], so findScriptEntries collapses it to a single
+    // directory entry rather than descending, and computeDomainData attributes
+    // that entry to Gameplay.
+    const { domains } = computeDomainData(root, FIXTURE_CONFIG);
+    const gameplay = domains.find((d) => d.name === "Gameplay");
+    assert.isDefined(gameplay);
+    assert.deepInclude(gameplay!.scripts, { path: "scripts/ts-defs/", isDirectory: true });
   });
 
   // Deliberately NOT asserted here: that no *.uistate.json or uistate/ path
