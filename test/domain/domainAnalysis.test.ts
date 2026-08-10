@@ -5,6 +5,7 @@ import * as path from "node:path";
 import {
   listUncategorized,
   listStaleOverrides,
+  listInertOverrides,
   collectValidDomainNames,
   validateOverrideKeys,
   validateOverrideValues,
@@ -66,6 +67,154 @@ describe("domainAnalysis", () => {
     it("returns empty when no overrides in config", () => {
       const config = makeConfig({ Auth: { description: "Auth" } });
       const result = listStaleOverrides(tmpDir, config);
+      assert.deepEqual(result, []);
+    });
+  });
+
+  describe("listInertOverrides", () => {
+    it("AC1 — reports editor-local shapes under a non-script section (uistate suffix, uistate/ dir, ts-defs/ dir, tsconfig.json)", () => {
+      createFile(tmpDir, "eventSheets/Orphan/OrphanEvents.uistate.json");
+      createFile(tmpDir, "eventSheets/Orphan/uistate/Ghost.json");
+      createFile(tmpDir, "eventSheets/Orphan/ts-defs/Types.json");
+      createFile(tmpDir, "eventSheets/Orphan/tsconfig.json");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "eventSheets/Orphan/OrphanEvents.uistate.json": "Auth",
+            "eventSheets/Orphan/uistate/Ghost.json": "Auth",
+            "eventSheets/Orphan/ts-defs/Types.json": "Auth",
+            "eventSheets/Orphan/tsconfig.json": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key).sort();
+      assert.deepEqual(keys, [
+        "eventSheets/Orphan/OrphanEvents.uistate.json",
+        "eventSheets/Orphan/ts-defs/Types.json",
+        "eventSheets/Orphan/tsconfig.json",
+        "eventSheets/Orphan/uistate/Ghost.json",
+      ]);
+      for (const entry of result) {
+        assert.isString(entry.reason);
+        assert.isAbove(entry.reason.length, 0);
+      }
+    });
+
+    it("AC2 — the ts-defs/ exemption is section-scoped: exempt under scripts/, not exempt under objectTypes/", () => {
+      createFile(tmpDir, "scripts/ts-defs/Player.d.ts");
+      createFile(tmpDir, "objectTypes/ts-defs/x.json");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "scripts/ts-defs/Player.d.ts": "Auth",
+            "objectTypes/ts-defs/x.json": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      assert.notInclude(keys, "scripts/ts-defs/Player.d.ts");
+      assert.include(keys, "objectTypes/ts-defs/x.json");
+    });
+
+    it("AC3 — reports a .js compiled-sibling override, but not a standalone .js with no .ts sibling", () => {
+      createFile(tmpDir, "scripts/X.js");
+      createFile(tmpDir, "scripts/X.ts");
+      createFile(tmpDir, "scripts/Y.js");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "scripts/X.js": "Auth",
+            "scripts/Y.js": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      assert.include(keys, "scripts/X.js");
+      assert.notInclude(keys, "scripts/Y.js");
+    });
+
+    it("AC4 — reports a non-source-extension file under scripts/", () => {
+      createFile(tmpDir, "scripts/shared/data.json");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "scripts/shared/data.json": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      assert.deepEqual(
+        result.map((r) => r.key),
+        ["scripts/shared/data.json"],
+      );
+    });
+
+    it("AC5 — does not report a non-script-extension file under one of the other four sections", () => {
+      createFile(tmpDir, "layouts/Main/notes.txt");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "layouts/Main/notes.txt": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      assert.deepEqual(result, []);
+    });
+
+    it("AC6 — reports a trailing-slash key naming a real directory", () => {
+      createFile(tmpDir, "scripts/other/foo.ts");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "scripts/other/": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      assert.deepEqual(
+        result.map((r) => r.key),
+        ["scripts/other/"],
+      );
+    });
+
+    it("regression guard — a directory key WITHOUT a trailing slash is live, not inert", () => {
+      createFile(tmpDir, "scripts/other/foo.ts");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "scripts/other": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      assert.deepEqual(result, []);
+    });
+
+    it("AC7 — a key missing from disk AND editor-local in shape is reported by listStaleOverrides, never by listInertOverrides", () => {
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "eventSheets/Orphan/uistate/Ghost.json": "Auth" } },
+      );
+
+      const stale = listStaleOverrides(tmpDir, config);
+      const inert = listInertOverrides(tmpDir, config);
+
+      assert.deepEqual(stale, ["eventSheets/Orphan/uistate/Ghost.json"]);
+      assert.deepEqual(inert, []);
+    });
+
+    it("returns empty when no overrides in config", () => {
+      const config = makeConfig({ Auth: { description: "Auth" } });
+      const result = listInertOverrides(tmpDir, config);
       assert.deepEqual(result, []);
     });
   });
