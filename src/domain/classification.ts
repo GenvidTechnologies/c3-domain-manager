@@ -1,14 +1,28 @@
 import { isEditorLocalPath, C3_TS_DEFS_FOLDER } from "@genvidtech/c3source";
 import type { DomainConfig, DomainDefinition } from "./types.js";
 
-/** File type root directory and dir-array key, keyed by file type. */
+/**
+ * File type root directory, dir-array key, and directory-emission capability,
+ * keyed by file type.
+ *
+ * `emitsDirectories` answers: can this section's walk ever produce a
+ * *directory* entry (as opposed to only files)? Only `scripts/` can —
+ * `findScriptEntries` collapses an unclaimed, non-layer directory into a
+ * single `"scripts/<name>/"` entry. The other four sections walk via
+ * `find_all_files_path`, which only ever yields files. `listInertOverrides`
+ * uses this to decide whether a directory-shaped override key could ever be
+ * produced by the section's walk at all, before asking whether it actually is.
+ */
 export const FILE_TYPES = {
-  eventSheet: { root: "eventSheets/", dirKey: "eventSheetDirs" },
-  layout: { root: "layouts/", dirKey: "layoutDirs" },
-  script: { root: "scripts/", dirKey: "scriptDirs" },
-  objectType: { root: "objectTypes/", dirKey: "objectTypeDirs" },
-  family: { root: "families/", dirKey: "familyDirs" },
-} as const satisfies Record<string, { root: string; dirKey: keyof DomainDefinition }>;
+  eventSheet: { root: "eventSheets/", dirKey: "eventSheetDirs", emitsDirectories: false },
+  layout: { root: "layouts/", dirKey: "layoutDirs", emitsDirectories: false },
+  script: { root: "scripts/", dirKey: "scriptDirs", emitsDirectories: true },
+  objectType: { root: "objectTypes/", dirKey: "objectTypeDirs", emitsDirectories: false },
+  family: { root: "families/", dirKey: "familyDirs", emitsDirectories: false },
+} as const satisfies Record<
+  string,
+  { root: string; dirKey: keyof DomainDefinition; emitsDirectories: boolean }
+>;
 
 /** Valid path-prefix roots, derived from FILE_TYPES (insertion order preserved). */
 export const VALID_PREFIXES = Object.values(FILE_TYPES).map((t) => t.root);

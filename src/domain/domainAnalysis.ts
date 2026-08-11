@@ -122,7 +122,7 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  * never reported by both functions.
  *
  * The check is derivative of each section's walk rules, not one flat
- * predicate — four distinct reasons a key can be inert:
+ * predicate — five distinct reasons a key can be inert:
  *
  *   1. Editor-local (section-aware): a path segment the section's walk never
  *      descends into or admits (`uistate/`, `*.uistate.json`, `tsconfig.json`,
@@ -136,6 +136,15 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  *   4. Trailing slash: `classifyFile` normalizes a walk's directory-entry
  *      path before matching overrides, so a key that itself carries the
  *      slash can never match.
+ *   5. Directory-shaped key (no trailing slash): `emitsDirectories` (from
+ *      `FILE_TYPES`) says whether the section's walk can ever produce a
+ *      directory entry at all — `eventSheets/`, `layouts/`, `objectTypes/`,
+ *      and `families/` never can, so any directory-shaped key under them is
+ *      inert outright. `scripts/` can, but only for a directory
+ *      `findScriptEntries` actually collapses into a single entry — a
+ *      structural layer directory (`LAYER_DIRS`) or one the config claims
+ *      strictly below (`hasClaimBelow`) is recursed into instead, so a key
+ *      naming it is inert too.
  */
 export function listInertOverrides(
   rootDir: string,
@@ -145,6 +154,10 @@ export function listInertOverrides(
 
   const results: Array<{ key: string; reason: string }> = [];
   const fileTypeKeys = Object.keys(FILE_TYPES) as Array<keyof typeof FILE_TYPES>;
+  // Computed lazily, at most once, the first time a directory-shaped key
+  // under scripts/ is encountered — findScriptEntries re-walks the whole
+  // scripts/ tree, so it's not worth paying for when no such key exists.
+  let emittedScriptPaths: Set<string> | undefined;
 
   for (const key of Object.keys(config.overrides)) {
     const fullPath = path.join(rootDir, key);
@@ -191,6 +204,43 @@ export function listInertOverrides(
       continue;
     }
 
+    // Class 5 — directory-shaped key (no trailing slash). emitsDirectories
+    // decides whether the section's walk could ever produce a directory
+    // entry at all; for scripts/, the walk itself then decides whether THIS
+    // directory is one it actually collapses into an entry.
+    const isDirectory = fs.statSync(fullPath).isDirectory();
+    if (isDirectory) {
+      if (!FILE_TYPES[fileType].emitsDirectories) {
+        results.push({
+          key,
+          reason:
+            `'${key}' names a directory, but the ${root} walk only ever emits files, never ` +
+            `directory entries, so this key can never be produced — classify this directory ` +
+            `with a '*Dirs' entry (e.g. '${FILE_TYPES[fileType].dirKey}: ["${innerPath}"]') ` +
+            `instead of an exact-path override.`,
+        });
+      } else {
+        if (!emittedScriptPaths) {
+          emittedScriptPaths = new Set(
+            findScriptEntries(path.join(rootDir, FILE_TYPES.script.root), config).map(
+              (entry) => entry.relativePath,
+            ),
+          );
+        }
+        if (!emittedScriptPaths.has(`${key}/`)) {
+          results.push({
+            key,
+            reason:
+              `'${key}' names a directory, but the scripts/ walk does not emit it as a ` +
+              `classifiable directory entry — it either recurses into it (a structural layer ` +
+              `directory, or a path the config claims strictly below it) or excludes it, so ` +
+              `this key can never be produced.`,
+          });
+        }
+      }
+      continue;
+    }
+
     if (isEditorLocalPath(basename)) {
       results.push({
         key,
@@ -201,10 +251,10 @@ export function listInertOverrides(
       continue;
     }
 
-    // Classes 2 and 3 — scripts/ only, files only. A key naming a real
-    // directory on disk is live (findScriptEntries collapses it to a single
-    // directory entry), so these file-only rules must not apply to it.
-    if (fileType === "script" && !fs.statSync(fullPath).isDirectory()) {
+    // Classes 2 and 3 — scripts/ only, files only. A directory-shaped key
+    // already `continue`d above in the class-5 branch, so a key that reaches
+    // here is guaranteed to name a file.
+    if (fileType === "script") {
       if (!isScriptSourceName(basename)) {
         results.push({
           key,
