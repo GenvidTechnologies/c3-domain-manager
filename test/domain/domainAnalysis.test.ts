@@ -217,6 +217,79 @@ describe("domainAnalysis", () => {
       const result = listInertOverrides(tmpDir, config);
       assert.deepEqual(result, []);
     });
+
+    it("AC8 — reports a directory-shaped key (no trailing slash) under a non-script section, in both eventSheets/ and families/", () => {
+      createFile(tmpDir, "eventSheets/Login/LoginEvents.json");
+      createFile(tmpDir, "families/Enemies/Goblin.json");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "eventSheets/Login": "Auth",
+            "families/Enemies": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      // Neither eventSheets/ nor families/ ever collapses a directory into a
+      // single walk entry the way findScriptEntries does for scripts/ — so a
+      // directory-shaped key here can never be produced and must be inert.
+      assert.include(keys, "eventSheets/Login");
+      assert.include(keys, "families/Enemies");
+    });
+
+    it("AC9 — scripts/ts-defs (no trailing slash) is NOT reported — false-positive guard", () => {
+      createFile(tmpDir, "scripts/ts-defs/Player.d.ts");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "scripts/ts-defs": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      // This key is genuinely live: findScriptEntries emits a collapsed
+      // "scripts/ts-defs/" directory entry because isReportableScriptDir
+      // exempts ts-defs, and classifyFile strips the trailing slash from that
+      // walk output before matching it against overrides — so the
+      // no-trailing-slash key "scripts/ts-defs" does match.
+      assert.notInclude(keys, "scripts/ts-defs");
+    });
+
+    it("AC10 — scripts/shared (a LAYER_DIRS entry, no trailing slash) is inert", () => {
+      createFile(tmpDir, "scripts/shared/util.ts");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        { overrides: { "scripts/shared": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      // "shared" is a LAYER_DIRS entry, so findScriptEntries recurses into it
+      // and emits "scripts/shared/util.ts" — it never emits a collapsed
+      // "scripts/shared/" directory entry, so this key can never be produced.
+      assert.include(keys, "scripts/shared");
+    });
+
+    it("AC11 — scripts/claimed (config claims strictly below it, no trailing slash) is inert", () => {
+      createFile(tmpDir, "scripts/claimed/deep/a.ts");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth", scriptDirs: ["claimed/deep"] } },
+        { overrides: { "scripts/claimed": "Auth" } },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      // The config claims "claimed/deep", strictly below "claimed" — hasClaimBelow
+      // forces findScriptEntries to descend, so the walk emits
+      // "scripts/claimed/deep/" and never a collapsed "scripts/claimed/" entry.
+      assert.include(keys, "scripts/claimed");
+    });
   });
 
   describe("listUncategorized", () => {

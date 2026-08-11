@@ -39,3 +39,4 @@ Architecture Decision Records, numbered chronologically by when the decision was
 - `decisions/0016-authored-script-js-support.md` — the authored-script rule: admit `.ts`/`.js` scripts on both enumerating surfaces, suppressing a `.js` with a same-directory `.ts` sibling as compiled output (issue #39)
 - `decisions/0017-script-surface-unification.md` — delegate `list-uncategorized`'s `scripts/` walk to `findScriptEntries`, defining the command derivatively as the domain index's worklist (issues #47, #46, #51)
 - `decisions/0018-inert-override-detection.md` — add `listInertOverrides`, a per-section-derivative check for override keys that exist on disk but that no walk can ever produce (issue #36)
+- `decisions/0019-walk-decides-directory-liveness.md` — a per-section table only gates whether a directory-shaped override key can be asked about; the walk itself decides liveness (issue #54)
