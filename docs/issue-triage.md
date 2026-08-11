@@ -51,6 +51,22 @@ Missing the essentials → add the **`question`** label and comment exactly what
 needed. (This repo has no dedicated `needs-info` label; `question` serves that
 role — match the `needsInfoLabel` in the `bugTracker` block to it.)
 
+**Cite modules and counts, not `file:line`.** This repo squash-merges and ships
+fast, so an issue body that pins exact line numbers decays within *days* — #37's
+six pinned lines drifted twice in a single week, and each drift makes a reader
+distrust the whole annotation. Pin the parts the argument actually rests on: the
+module names and the number of sites. Those survived all three commits that moved
+the lines. Re-derive the lines with `grep -n` when the work is taken up.
+
+The same decay hits **symbol** citations, and worse, because they fail silently in
+the other direction: #49's own triage correction cited `collectScriptFiles` roughly
+one day after it was written, by which point #47/#53 had deleted the function — the
+citation still *read* as authoritative. So when triaging, **re-verify an issue's
+concrete code citations against the current tree**, including citations added by a
+previous triage pass. A `Verified against main @ <sha>` stamp is a claim about a
+commit that has usually moved; treat it as a hypothesis and re-check, rather than
+as evidence the body is current.
+
 ## Splitting
 
 Split when one issue bundles unrelated concerns, or when a single piece of work
