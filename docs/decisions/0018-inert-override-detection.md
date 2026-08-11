@@ -107,24 +107,44 @@ either: the `scripts/` prefix is valid.
   `test/domain/domainAnalysis.test.ts` pairs `scripts/other/` (inert, class 4)
   against `scripts/other` — same directory, no trailing slash (live) — so the
   two land on opposite sides of the report.
+- **The class-5 directory branch (added by issue #54,
+  [[0019-walk-decides-directory-liveness]]) sits after this record's class-1
+  directory-segment check but before class-1's basename check.** Placed after
+  the basename check instead, `isEditorLocalPath("ts-defs")` would match first
+  on a key like `scripts/ts-defs` and report a live key — ADR 0013's
+  deliberate `ts-defs/` exemption — as inert. That is exactly the false
+  positive issue #54's planning measured against this record's shipped code
+  and [[0019-walk-decides-directory-liveness]] fixes.
 
-### A known gap this record states honestly
+### A known gap this record states honestly — closed by issue #54
 
 A **directory-shaped override key under one of the four non-script sections** —
 e.g. `"eventSheets/Login": "Auth"` where `eventSheets/Login/` is a real directory
-— is **also inert and is NOT detected**. Those four walks emit files only, never
-directory entries, so the key can never match. Measured with a throwaway synthetic
+— was **also inert and NOT detected**. Those four walks emit files only, never
+directory entries, so the key could never match. Measured with a throwaway synthetic
 probe: `classifyFile` given a file path inside such a directory falls through the
 `eventSheetDirs` prefix match unchanged, unaffected by the directory-shaped
-`overrides` key, and lands unclassified; `listInertOverrides` returns `[]` for that
-key. Contrast `scripts/other`, where the equivalent probe shows the key resolving
+`overrides` key, and lands unclassified; `listInertOverrides` returned `[]` for that
+key. Contrast `scripts/other`, where the equivalent probe showed the key resolving
 live — that liveness is exactly why the directory guard above exists, and why this
-gap is not trivially closable by just deleting that guard.
+gap was not trivially closable by just deleting that guard.
 
 Closing this gap means distinguishing "directory key under a section whose walk
 emits directories" (`scripts/`, live) from "directory key under a section whose
 walk does not" (the other four, inert) — a per-section capability the current
 `FILE_TYPES` table does not encode. Filed as issue #54 to close it.
+
+**That prescribed fix turned out to be necessary but not sufficient.** Adding
+the per-section capability (`FILE_TYPES.emitsDirectories`) does close the gap
+for the four non-script sections above — but probing `scripts/` itself during
+issue #54's planning surfaced three further defects in the same predicate that
+a static per-section table cannot express: under `scripts/`, whether a
+directory-shaped key is live is a property of the walk's actual descent
+decisions (`isReportableScriptDir`'s `ts-defs/` exemption, structural
+layer-directory recursion, `hasClaimBelow`-forced descent), not of the
+section as a whole. [[0019-walk-decides-directory-liveness]] records the
+corrected design — the table gates whether the question is askable, the walk
+itself answers it — and the measurements that refuted the table-alone fix.
 
 ## Consequences
 
