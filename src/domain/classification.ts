@@ -198,12 +198,22 @@ export function isScriptSourceName(name: string): boolean {
  * the whole of its protection.
  *
  * PLATFORM-ADJACENT, LOCAL BY DECISION: unlike SCRIPT_SOURCE_EXTENSIONS above
- * (a platform fact c3source doesn't export yet), this list is product policy,
- * not a platform fact — it is derived from what computeDomainData parses,
- * not from what C3 permits on disk. c3source deliberately keeps its four
- * section finders' extension policies inconsistent and filters at each parse
- * boundary instead (GenvidTechnologies/c3source#76 is the open question on
- * whether that's intentional; re-check this list when it resolves).
+ * — a platform fact, held locally only until c3source exported it, and retired
+ * to upstream in issue #48 once it did — this list is product policy. It is
+ * derived from what computeDomainData parses, not from what C3 permits on disk,
+ * so upstream resolving its own question does not settle ours.
+ *
+ * UNREACHABLE AS OF c3source 2.0.0, AND DELIBERATELY KEPT ANYWAY. 2.0.0
+ * narrowed find_all_layouts_path and find_all_objectTypes_path to .json,
+ * joining eventsheets and families, so all four collectors behind
+ * collectSectionFiles now drop non-.json upstream and nothing arrives for this
+ * rule to reject. (GenvidTechnologies/c3source#76 asked whether the previous
+ * inconsistency was intentional; 2.0.0 answered by unifying them.) The rule
+ * still states a true thing about *our* parse boundary, which is what ADR 0020
+ * actually argued — but an unreachable filter cannot be tested, and an
+ * untestable rule decays silently. Whether to keep it, retire it, or keep the
+ * constant without the log line is issue #60; this was left alone in #48
+ * because re-litigating ADR 0020 was not that spike's subject.
  */
 export const SECTION_SOURCE_EXTENSIONS = [".json"] as const;
 

@@ -1537,10 +1537,16 @@ describe("computeDomainData — non-.json strays in claimed section dirs (issue 
     // Neither stray appears in unclassified — they were dropped, not misfiled.
     assert.deepEqual(result!.unclassified, []);
 
-    // The drop is observable via the logger (T16).
-    assert.isTrue(
-      logs.some((l) => l.includes("layouts/Main/notes.txt")),
-      "expected a dropped-file log line naming layouts/Main/notes.txt",
+    // Neither stray is logged, either. Until c3source 2.0.0 the drop happened
+    // in collectSectionFiles and was observable via the logger (T16); 2.0.0
+    // narrowed find_all_layouts_path/find_all_objectTypes_path to .json, so
+    // both strays are filtered upstream and never reach our filter to be
+    // logged. The crash-prevention and classification assertions above are what
+    // this test still proves — they are unaffected by which layer drops them.
+    assert.deepEqual(
+      logs.filter((l) => l.includes("layouts/Main/notes.txt") || l.includes("objectTypes/Main/i.png")),
+      [],
+      "expected no dropped-file log line for either stray — c3source 2.0.0 filters them upstream",
     );
   });
 });
