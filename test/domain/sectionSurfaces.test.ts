@@ -2,7 +2,10 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import { openProject } from "@genvidtech/c3source";
 import { isSectionSourceName, collectSectionFiles } from "../../src/domain/classification.js";
+import { listUncategorized } from "../../src/domain/domainAnalysis.js";
+import { computeDomainData } from "../../src/domain/domainGenerator.js";
 import { createFile, makeTempDir, removeTempDir } from "../syntheticProject.js";
+import { makeConfig } from "../domainModel.js";
 
 describe("isSectionSourceName", () => {
   it("admits .json files", () => {
@@ -68,5 +71,85 @@ describe("collectSectionFiles", () => {
     // this one — it never got a chance to make that call.
     assert.deepEqual(result, []);
     assert.deepEqual(logMessages, []);
+  });
+});
+
+// --- Cross-surface agreement (issue #52) ------------------------------------
+//
+// `listUncategorized` and `computeDomainData` both now delegate their
+// eventSheets/, layouts/, objectTypes/ and families/ walks to
+// `collectSectionFiles` (the same enumeration for both readers), so the two
+// surfaces agree over the whole four-section tree by construction — the
+// structural sibling of "listUncategorized vs findScriptEntries" above, for
+// the four non-script sections instead of scripts/ (ADR 0017 covers
+// scripts/; this covers the other four).
+const SECTION_ROOTS = ["eventSheets/", "layouts/", "objectTypes/", "families/"];
+
+function filterToSections(paths: string[]): string[] {
+  return paths.filter((p) => SECTION_ROOTS.some((root) => p.startsWith(root))).sort();
+}
+
+describe("listUncategorized vs computeDomainData — four-section cross-surface agreement", () => {
+  let tmpDir: string;
+
+  // A domain config that classifies nothing (no *Dirs at all), so
+  // listUncategorized's *unclassified* output is directly comparable to
+  // computeDomainData's *unclassified* output.
+  const config = makeConfig({
+    Placeholder: { description: "claims nothing — no *Dirs" },
+  });
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("sectionSurfaces-agreement-");
+
+    // One admitted (.json) and one dropped (non-.json) file per section, all
+    // in directories the config above does not claim.
+    createFile(tmpDir, "eventSheets/Foo/Main.json", "{}");
+    createFile(tmpDir, "eventSheets/Foo/notes.txt", "hello");
+    createFile(tmpDir, "layouts/Bar/Level.json", "{}");
+    createFile(tmpDir, "layouts/Bar/readme.md", "hello");
+    createFile(tmpDir, "objectTypes/Baz/Player.json", "{}");
+    createFile(tmpDir, "objectTypes/Baz/data.xml", "hello");
+    createFile(tmpDir, "families/Qux/Enemies.json", "{}");
+    createFile(tmpDir, "families/Qux/notes.md", "hello");
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  it("agree over the whole four-section tree, and agree on the right answer", () => {
+    const uncategorizedSections = filterToSections(listUncategorized(tmpDir, config));
+    const { unclassified } = computeDomainData(tmpDir, config);
+    const unclassifiedSections = filterToSections(unclassified);
+
+    // The literal below is load-bearing, not redundant with the surface
+    // comparison above: two empty arrays would `deepEqual` each other just
+    // as well as two correct ones, so without this literal the test would
+    // keep passing if BOTH walks silently dropped every admitted file (e.g.
+    // collectSectionFiles wired to the wrong section, or never called at
+    // all). Asserting against an explicit expected array is what catches
+    // that failure mode, not just a divergence between the two readers.
+    const expected = [
+      "eventSheets/Foo/Main.json",
+      "families/Qux/Enemies.json",
+      "layouts/Bar/Level.json",
+      "objectTypes/Baz/Player.json",
+    ];
+
+    assert.deepEqual(uncategorizedSections, unclassifiedSections);
+    assert.deepEqual(unclassifiedSections, expected);
+
+    // The dropped non-.json file per section must be absent from both.
+    const droppedFiles = [
+      "eventSheets/Foo/notes.txt",
+      "layouts/Bar/readme.md",
+      "objectTypes/Baz/data.xml",
+      "families/Qux/notes.md",
+    ];
+    for (const dropped of droppedFiles) {
+      assert.notInclude(listUncategorized(tmpDir, config), dropped);
+      assert.notInclude(computeDomainData(tmpDir, config).unclassified, dropped);
+    }
   });
 });
