@@ -45,7 +45,7 @@ describe("collectSectionFiles", () => {
     assert.deepEqual(result, ["eventSheets/Login/Main.json"]);
   });
 
-  it("drops a non-.json file under objectTypes/ and logs its relative path", () => {
+  it("drops a non-.json file under objectTypes/ via c3source's own collector, never reaching isSectionSourceName", () => {
     createFile(tmpDir, "objectTypes/notes.txt", "hello");
     const logMessages: string[] = [];
     const project = openProject(tmpDir);
@@ -53,7 +53,16 @@ describe("collectSectionFiles", () => {
     const result = collectSectionFiles(project, "objectType", tmpDir, (msg) => logMessages.push(String(msg)));
 
     assert.deepEqual(result, []);
-    assert.deepEqual(logMessages, ["  Dropped non-section-source file: objectTypes/notes.txt"]);
+    // Silence is the assertion. Until c3source 2.0.0 this file reached
+    // isSectionSourceName and was dropped *here*, logging its relative path.
+    // 2.0.0 narrowed find_all_objectTypes_path (and find_all_layouts_path) to
+    // .json, so it is now filtered upstream and never arrives — same output,
+    // different layer. The local filter and its log line are deliberately kept
+    // (see classification.ts); this test no longer proves they fire, because
+    // for this section they cannot. Whether SECTION_SOURCE_EXTENSIONS is still
+    // warranted now that all four section finders filter to .json upstream is
+    // tracked separately — see ADR 0020 and the follow-up issue it links.
+    assert.deepEqual(logMessages, []);
   });
 
   it("drops an editor-local .uistate.json file via c3source's own collector, never reaching isSectionSourceName", () => {

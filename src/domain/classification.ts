@@ -1,5 +1,9 @@
 import path from "node:path";
-import { isEditorLocalPath, C3_TS_DEFS_FOLDER } from "@genvidtech/c3source";
+import {
+  isEditorLocalPath,
+  C3_TS_DEFS_FOLDER,
+  SCRIPT_SOURCE_EXTENSIONS,
+} from "@genvidtech/c3source";
 import type { C3Project } from "@genvidtech/c3source";
 import type { Logger } from "@genvidtech/mcp-utils";
 import type { DomainConfig, DomainDefinition } from "./types.js";
@@ -143,16 +147,31 @@ export function hasClaimBelow(
  * Script source extensions. Construct 3 supports both; which one C3 *loads* is a
  * function of the editor release (r39700 projects declare the compiled .js in
  * project.c3proj, r47604+ declare the .ts). This tool maps *authored source*, so
- * it admits both and disambiguates a .ts/.js pair with isCompiledSibling. ADR 0016.
+ * it admits both and disambiguates a .ts/.js pair with isGeneratedScriptOutput
+ * (from @genvidtech/c3source, replacing the formerly-local same-purpose
+ * predicate this module used to define). ADR 0016.
  *
- * PLATFORM FACT, TEMPORARILY LOCAL: c3source owns C3 platform facts, but 1.9.0
- * exports no script-extension constant (findAllScripts hardcodes .ts and excludes
- * .d.ts). Re-check on the next c3source bump; upstream issue filed.
+ * UPSTREAM-SOURCED as of c3source 2.0.0 (issue #48): this used to be a platform
+ * fact held locally only because c3source had not exported it yet — that was
+ * this repo's own stated retire-trigger (CLAUDE.md), and it has now fired.
+ * Re-exported here rather than imported directly at each call site so the
+ * published API surface (`src/index.ts` re-exports this module) stays stable.
  */
-export const SCRIPT_SOURCE_EXTENSIONS = [".ts", ".js"] as const;
+export { SCRIPT_SOURCE_EXTENSIONS };
 
-/** Clause 2 — extension admission. Takes a bare basename, the form
- *  `findScriptEntries` has at the point it decides (no directory context there). */
+/**
+ * Clause 2 — extension admission. Takes a bare basename, the form
+ * `findScriptEntries` has at the point it decides (no directory context there).
+ *
+ * DELIBERATELY NOT c3source's same-named `isScriptSourceName` (available since
+ * 2.0.0): upstream's excludes `.d.ts`, ours must admit it — dropping `.d.ts`
+ * here would silently stop ADR 0013's `ts-defs/` exemption working, since a
+ * generated typing file would no longer be indexable via `scriptDirs`. The
+ * divergence is pinned by a cross-library test in
+ * `test/domain/scriptSurfaces.test.ts` (asserts local(`.d.ts`) === true and
+ * upstream(`.d.ts`) === false side by side), so re-adopting upstream's version
+ * fails a test instead of silently regressing.
+ */
 export function isScriptSourceName(name: string): boolean {
   return SCRIPT_SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext));
 }
@@ -179,38 +198,28 @@ export function isScriptSourceName(name: string): boolean {
  * the whole of its protection.
  *
  * PLATFORM-ADJACENT, LOCAL BY DECISION: unlike SCRIPT_SOURCE_EXTENSIONS above
- * (a platform fact c3source doesn't export yet), this list is product policy,
- * not a platform fact — it is derived from what computeDomainData parses,
- * not from what C3 permits on disk. c3source deliberately keeps its four
- * section finders' extension policies inconsistent and filters at each parse
- * boundary instead (GenvidTechnologies/c3source#76 is the open question on
- * whether that's intentional; re-check this list when it resolves).
+ * — a platform fact, held locally only until c3source exported it, and retired
+ * to upstream in issue #48 once it did — this list is product policy. It is
+ * derived from what computeDomainData parses, not from what C3 permits on disk,
+ * so upstream resolving its own question does not settle ours.
+ *
+ * UNREACHABLE AS OF c3source 2.0.0, AND DELIBERATELY KEPT ANYWAY. 2.0.0
+ * narrowed find_all_layouts_path and find_all_objectTypes_path to .json,
+ * joining eventsheets and families, so all four collectors behind
+ * collectSectionFiles now drop non-.json upstream and nothing arrives for this
+ * rule to reject. (GenvidTechnologies/c3source#76 asked whether the previous
+ * inconsistency was intentional; 2.0.0 answered by unifying them.) The rule
+ * still states a true thing about *our* parse boundary, which is what ADR 0020
+ * actually argued — but an unreachable filter cannot be tested, and an
+ * untestable rule decays silently. Whether to keep it, retire it, or keep the
+ * constant without the log line is issue #60; this was left alone in #48
+ * because re-litigating ADR 0020 was not that spike's subject.
  */
 export const SECTION_SOURCE_EXTENSIONS = [".json"] as const;
 
 /** Takes a bare basename, the same contract as isScriptSourceName above. */
 export function isSectionSourceName(name: string): boolean {
   return SECTION_SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext));
-}
-
-/**
- * Clause 1 — compiled-sibling suppression. True when `name` is a .js whose
- * same-basename .ts sibling exists in the same directory: it is tsc output of a
- * file we already report (or is indistinguishable from it — see ADR 0016's
- * compromise on hand-edited output).
- *
- * Pure by construction: takes the sibling basenames rather than touching the
- * filesystem, so both walk sites feed it a listing they already have and the
- * rule is unit-testable with no temp dir.
- *
- * `siblingNames` MUST be scoped to ONE directory. A set spanning directories
- * would let scripts/shared/a.ts suppress scripts/common/a.js.
- *
- * Note `.d.ts` is deliberately NOT a suppressor: Player.d.ts is a declaration,
- * not the authored source of Player.js, so Player.js stays reported.
- */
-export function isCompiledSibling(name: string, siblingNames: ReadonlySet<string>): boolean {
-  return name.endsWith(".js") && siblingNames.has(name.slice(0, -".js".length) + ".ts");
 }
 
 /**

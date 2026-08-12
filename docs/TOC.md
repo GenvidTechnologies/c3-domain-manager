@@ -41,3 +41,4 @@ Architecture Decision Records, numbered chronologically by when the decision was
 - `decisions/0018-inert-override-detection.md` — add `listInertOverrides`, a per-section-derivative check for override keys that exist on disk but that no walk can ever produce (issue #36)
 - `decisions/0019-walk-decides-directory-liveness.md` — a per-section table only gates whether a directory-shaped override key can be asked about; the walk itself decides liveness (issue #54)
 - `decisions/0020-section-source-extension-filter.md` — filter the four non-script section walks to `.json` at the parse boundary, closing a `generate` crash and reconciling ADR 0013 decision #4 with ADR 0017's worklist definition (issue #52)
+- `decisions/0021-decline-drift-diagnostic.md` — decline a compiled-output drift diagnostic, here or upstream, after measuring three candidate mechanisms against a widened corpus (issue #48)

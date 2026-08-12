@@ -11,13 +11,16 @@ to re-run (that skill is one-time setup, not per-release).
 # 1. Land all release content on main first (the tag publishes whatever main points at).
 # 2. Bump the version (patch for fixes, minor for features) — updates all 3 spots, no commit/tag:
 npm version X.Y.Z --no-git-tag-version
-# 3. Commit + tag + push:
-git add package.json package-lock.json
+# 3. Move CHANGELOG.md's "## [Unreleased]" under a "## [X.Y.Z] - YYYY-MM-DD" heading,
+#    open a fresh empty Unreleased, and update the link refs at the foot of the file.
+#    A "### Removed" entry marked BREAKING means step 2 had to be a MINOR (pre-1.0 rule).
+# 4. Commit + tag + push:
+git add package.json package-lock.json CHANGELOG.md
 git commit -m "chore: Release X.Y.Z"     # see message shape below
 git tag vX.Y.Z                            # lightweight tag — matches recent convention
 git push origin main
 git push origin vX.Y.Z                    # this push triggers the publish workflow
-# 4. After it publishes: file the downstream plugin update request (step 7).
+# 5. After it publishes: file the downstream plugin update request (step 8).
 ```
 
 ## Step by step
@@ -38,7 +41,23 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    (You can edit the three spots by hand instead, but that risks missing the second
    `package-lock.json` spot; the flag-driven bump is safer. See the note below.)
 
-2. **Commit** with the project's release-commit shape — a `chore: Release X.Y.Z`
+2. **Move the `CHANGELOG.md` `## Unreleased` section under a version heading.**
+   Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, open a fresh empty
+   `## [Unreleased]` above it, and add the two link-reference lines at the foot of
+   the file (`[Unreleased]` now compares `vX.Y.Z...HEAD`; `[X.Y.Z]` compares
+   `vW.V.U...vX.Y.Z`). The changelog is committed **in the same `chore: Release`
+   commit** as the version bump, so the tag points at a tree whose changelog already
+   describes the release.
+
+   **This step is also where the version choice gets sanity-checked**, because
+   `## Unreleased` is where a breaking change was recorded when it landed. A
+   `### Removed` entry marked BREAKING means step 1's bump must be a **minor**, per
+   the pre-1.0 rule above — the changelog is the durable record of that, since the
+   PR that caused it is long merged by release time. (Example: the `isCompiledSibling`
+   removal in #48 is recorded exactly this way, and forces a minor on the next
+   release.)
+
+3. **Commit** with the project's release-commit shape — a `chore: Release X.Y.Z`
    subject, a short body summarising what the release contains (issue refs welcome),
    and the standard co-author trailer:
 
@@ -51,7 +70,7 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    Co-Authored-By: <current model> <noreply@anthropic.com>
    ```
 
-3. **Tag.** Use a **lightweight** tag matching the recent convention
+4. **Tag.** Use a **lightweight** tag matching the recent convention
    (`v0.1.1`, `v0.1.2`, `v0.1.3` are lightweight; only the original `v0.1.0` was
    annotated):
 
@@ -59,14 +78,14 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    git tag vX.Y.Z
    ```
 
-4. **Push the commit, then the tag.** The tag is what triggers publishing:
+5. **Push the commit, then the tag.** The tag is what triggers publishing:
 
    ```bash
    git push origin main
    git push origin vX.Y.Z
    ```
 
-5. **Watch the publish.** The tag push fires `.github/workflows/publish.yml`
+6. **Watch the publish.** The tag push fires `.github/workflows/publish.yml`
    (trigger: `push` on `v*.*.*`). It runs the shared `public-github-actions` node-gate,
    then publishes to npm via OIDC trusted publishing (automatic provenance, no
    stored token). Confirm:
@@ -76,13 +95,13 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    npm view @genvidtech/c3-domain-manager version   # should show the new version as latest
    ```
 
-6. **Smoke-check the CLI version** (catches the class of bug that motivated this doc):
+7. **Smoke-check the CLI version** (catches the class of bug that motivated this doc):
 
    ```bash
    npx -y @genvidtech/c3-domain-manager@X.Y.Z --version   # prints X.Y.Z, not "unknown"
    ```
 
-7. **File the downstream plugin update request.** The `gvt-construct3` plugin
+8. **File the downstream plugin update request.** The `gvt-construct3` plugin
    (`GenvidTechnologies/claude-code-plugin-gvt-construct3`) **pins** this package in
    `plugin/.claude-plugin/plugin.json` (`mcpServers.c3-domain-manager`, e.g.
    `@genvidtech/c3-domain-manager@0.3.0`) and references the pinned version in its
@@ -106,7 +125,7 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
   `X.Y.Z`) and an **annotated** tag — neither matches the `chore: Release X.Y.Z` +
   lightweight-tag + co-author-trailer convention. The `--no-git-tag-version` flag keeps
   the correct three-spot bump while making no commit and no tag, so you commit and
-  lightweight-tag by hand (steps 2–4) to match the convention. Hand-editing the three
+  lightweight-tag by hand (steps 3–4) to match the convention. Hand-editing the three
   spots also works but risks missing the second `package-lock.json` spot
   (`packages."".version`).
 - **If the version bump already landed with the feature/fix branch**, the release step

@@ -13,6 +13,7 @@ import {
   extractExpressionReferences,
   isScriptAction,
   isEditorLocalPath,
+  isGeneratedScriptOutput,
 } from "@genvidtech/c3source";
 import type {
   EventSheet,
@@ -27,7 +28,6 @@ import type {
 import {
   classifyFile,
   isScriptSourceName,
-  isCompiledSibling,
   hasClaimBelow,
   isReportableScriptDir,
   collectSectionFiles,
@@ -187,7 +187,12 @@ export function findScriptEntries(
         stats.isFile() &&
         isScriptSourceName(name) &&
         !isEditorLocalPath(name) &&
-        !isCompiledSibling(name, siblingNames)
+        // siblingNames MUST be scoped to this one scanDir invocation's directory
+        // listing (built from its own readdirSync) — c3source states that contract only on
+        // filterAuthoredScriptPaths, not on isGeneratedScriptOutput itself, so a
+        // whole-tree sibling set here would let scripts/shared/a.ts suppress
+        // scripts/common/a.js.
+        !isGeneratedScriptOutput(name, siblingNames)
       ) {
         // The editor-local guard is now unconditional. It used to be provably
         // redundant — the filter admitted only ".ts", and no EDITOR_LOCAL_EXCLUSIONS

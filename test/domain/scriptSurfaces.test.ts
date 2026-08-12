@@ -2,8 +2,11 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as path from "node:path";
 import {
+  isGeneratedScriptOutput,
+  isScriptSourceName as upstreamIsScriptSourceName,
+} from "@genvidtech/c3source";
+import {
   isScriptSourceName,
-  isCompiledSibling,
   classifyFile,
   hasClaimBelow,
 } from "../../src/domain/classification.js";
@@ -34,21 +37,38 @@ describe("isScriptSourceName", () => {
   });
 });
 
-describe("isCompiledSibling", () => {
+describe("isGeneratedScriptOutput (from @genvidtech/c3source, replacing local isCompiledSibling)", () => {
   it("suppresses a .js with a same-basename .ts sibling", () => {
-    assert.isTrue(isCompiledSibling("a.js", new Set(["a.ts"])));
+    assert.isTrue(isGeneratedScriptOutput("a.js", new Set(["a.ts"])));
   });
 
   it("does not suppress a .js without a matching .ts sibling — clause 1 is per-directory", () => {
-    assert.isFalse(isCompiledSibling("a.js", new Set(["b.ts"])));
+    assert.isFalse(isGeneratedScriptOutput("a.js", new Set(["b.ts"])));
   });
 
-  it("does not treat a .d.ts as a suppressor", () => {
-    assert.isFalse(isCompiledSibling("Player.js", new Set(["Player.d.ts"])));
+  it("does not treat a .d.ts as a suppressor (cross-library pin — upstream agrees)", () => {
+    assert.isFalse(isGeneratedScriptOutput("Player.js", new Set(["Player.d.ts"])));
   });
 
   it("never suppresses a .ts file", () => {
-    assert.isFalse(isCompiledSibling("a.ts", new Set(["a.ts", "a.js"])));
+    assert.isFalse(isGeneratedScriptOutput("a.ts", new Set(["a.ts", "a.js"])));
+  });
+
+  it("compares extensions case-insensitively (the one behaviour delta vs. the retired local predicate)", () => {
+    assert.isTrue(isGeneratedScriptOutput("Main.JS", new Set(["main.ts"])));
+  });
+});
+
+// Divergence-pinning: c3source's own isScriptSourceName (available since 2.0.0)
+// excludes .d.ts, but this repo's isScriptSourceName deliberately admits it — a
+// generated typing under scripts/ts-defs/ must stay indexable via scriptDirs
+// (ADR 0013's ts-defs/ exemption). If a future change "adopts" upstream's
+// version in place of the local one, this test fails instead of the exemption
+// silently regressing.
+describe("isScriptSourceName — deliberate divergence from upstream on .d.ts (ADR 0013)", () => {
+  it("local admits .d.ts, upstream rejects it", () => {
+    assert.isTrue(isScriptSourceName("Player.d.ts"));
+    assert.isFalse(upstreamIsScriptSourceName("Player.d.ts"));
   });
 });
 
