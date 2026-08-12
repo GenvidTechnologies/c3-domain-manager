@@ -492,22 +492,28 @@ describe("domainAnalysis", () => {
       assert.deepEqual(result, ["scripts/main.ts", "scripts/onlyjs.js"]);
     });
 
-    it("R-D2 — the four non-script section walks still report a stray file individually, unaffected by the scripts/ delegation", () => {
+    it("R-D2 — the four non-script section walks admit only .json section source, dropping a non-.json stray beside it", () => {
       createFile(tmpDir, "eventSheets/Orphan/notes.md");
+      createFile(tmpDir, "eventSheets/Orphan/Real.json");
       createFile(tmpDir, "families/Orphan/notes.md");
+      createFile(tmpDir, "families/Orphan/Real.json");
       createFile(tmpDir, "layouts/Orphan/r.txt");
+      createFile(tmpDir, "layouts/Orphan/Real.json");
       createFile(tmpDir, "objectTypes/Orphan/i.png");
+      createFile(tmpDir, "objectTypes/Orphan/Real.json");
 
       const config = makeConfig({
         Auth: { description: "Auth" },
       });
 
       const result = listUncategorized(tmpDir, config);
+      // Real.json is the positive control: without it, this test would pass
+      // just as well if all four walks silently returned nothing.
       assert.deepEqual(result, [
-        "eventSheets/Orphan/notes.md",
-        "families/Orphan/notes.md",
-        "layouts/Orphan/r.txt",
-        "objectTypes/Orphan/i.png",
+        "eventSheets/Orphan/Real.json",
+        "families/Orphan/Real.json",
+        "layouts/Orphan/Real.json",
+        "objectTypes/Orphan/Real.json",
       ]);
     });
   });
