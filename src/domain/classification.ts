@@ -11,9 +11,11 @@ import type { DomainConfig, DomainDefinition } from "./types.js";
  * `emitsDirectories` answers: can this section's walk ever produce a
  * *directory* entry (as opposed to only files)? Only `scripts/` can —
  * `findScriptEntries` collapses an unclaimed, non-layer directory into a
- * single `"scripts/<name>/"` entry. The other four sections walk via
- * `find_all_files_path`, which only ever yields files. `listInertOverrides`
- * uses this to decide whether a directory-shaped override key could ever be
+ * single `"scripts/<name>/"` entry. The other four sections go through
+ * `collectSectionFiles`, whose `C3Project.findAll*` collectors only ever
+ * yield files (ADR 0020; before that they walked `find_all_files_path`
+ * directly — same conclusion, different route). `listInertOverrides` uses
+ * this to decide whether a directory-shaped override key could ever be
  * produced by the section's walk at all, before asking whether it actually is.
  */
 export const FILE_TYPES = {
@@ -150,7 +152,7 @@ export function hasClaimBelow(
 export const SCRIPT_SOURCE_EXTENSIONS = [".ts", ".js"] as const;
 
 /** Clause 2 — extension admission. Takes a bare basename, the form
- *  find_all_files_path's predicate receives (no directory context available there). */
+ *  `findScriptEntries` has at the point it decides (no directory context there). */
 export function isScriptSourceName(name: string): boolean {
   return SCRIPT_SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext));
 }
