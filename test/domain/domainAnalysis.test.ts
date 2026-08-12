@@ -516,6 +516,41 @@ describe("domainAnalysis", () => {
         "objectTypes/Orphan/Real.json",
       ]);
     });
+
+    it("guards the section-source filter ORDER, not just uistate exclusion: isSectionSourceName alone would re-admit a .uistate.json", () => {
+      // layouts/ is deliberately unclaimed (no layoutDirs on Auth), so both
+      // files fall straight through to the uncategorized/unclassified walk
+      // instead of being resolved by a domain dir or an override.
+      createFile(tmpDir, "layouts/Main.uistate.json");
+      createFile(tmpDir, "layouts/Main.json");
+
+      const config = makeConfig({
+        Auth: { description: "Auth" },
+      });
+
+      // Main.uistate.json ends in ".json" -- isSectionSourceName, taken on
+      // its own, would happily admit it. Its absence below is proof that
+      // c3source's editor-local exclusion (applied inside the C3Project walk
+      // collectSectionFiles reads from) ran BEFORE isSectionSourceName's
+      // extension check, not that the extension check is somehow stricter
+      // than it looks. This is deliberately not a duplicate of the "we don't
+      // report uistate files" tests elsewhere in this suite -- what's unique
+      // here is pinning the ORDER of the two filters. A future refactor that
+      // "simplifies the two walks into one" by running isSectionSourceName as
+      // a standalone predicate -- instead of downstream of a collector that
+      // already applied isEditorLocalPath -- would silently re-admit this
+      // file, and nothing else in the suite would notice.
+      const uncategorized = listUncategorized(tmpDir, config);
+      assert.notInclude(uncategorized, "layouts/Main.uistate.json");
+
+      const { unclassified } = computeDomainData(tmpDir, config);
+      assert.notInclude(unclassified, "layouts/Main.uistate.json");
+
+      // Positive control -- without it, this test would pass just as well if
+      // the entire layouts/ walk silently returned nothing on both surfaces.
+      assert.include(uncategorized, "layouts/Main.json");
+      assert.include(unclassified, "layouts/Main.json");
+    });
   });
 });
 
