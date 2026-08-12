@@ -161,10 +161,16 @@ construction:
   `scripts/`, so there is nothing an `overrides` entry could usefully change. See
   `docs/decisions/0017-script-surface-unification.md`.
 
-The other four sections have no such filter — a stray non-`.json` file sitting in an
-unclaimed `eventSheets/` or `families/` directory is still a legitimate "unmapped file
-here" finding, since those sections' index collectors filter to `.json` while
-`classifyFile`'s walk of them does not.
+The same derivative logic applies uniformly to all four non-script sections, not
+just to the `scripts/` case above: `eventSheets/`, `layouts/`, `objectTypes/`, and
+`families/` are all authored as `.json`, and every one of the four is walked
+through the shared `collectSectionFiles` collector, which admits only `.json` and
+drops everything else before either surface ever sees it. So a stray non-`.json`
+file sitting in one of those four directories — an `eventSheets/` `.md`, an
+`objectTypes/` `.png` — is reported by
+neither surface, for the same reason as the non-script case above: the index has
+no representation for a file it cannot parse, so there is nothing an `overrides`
+entry could usefully change. See `docs/decisions/0020-section-source-extension-filter.md`.
 
 **Editor-local artifacts are excluded from the walk, not just left unclassified.** `list-uncategorized` never presents these as unmapped work in the first place, via `@genvidtech/c3source`'s `isEditorLocalPath`:
 

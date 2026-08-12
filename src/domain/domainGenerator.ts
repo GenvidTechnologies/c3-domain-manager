@@ -30,6 +30,7 @@ import {
   isCompiledSibling,
   hasClaimBelow,
   isReportableScriptDir,
+  collectSectionFiles,
 } from "./classification.js";
 import { computeHubDomains } from "./coupling.js";
 import { formatDomainIndex as formatDomainIndexPage, formatDomainPage } from "./formatting.js";
@@ -221,8 +222,8 @@ export function computeDomainData(
 ): ComputeDomainDataResult {
   // Find all files
   const project = openProject(rootDir);
-  const eventSheetPaths = project.findAllEventSheets();
-  const layoutPaths = project.findAllLayouts();
+  const eventSheetPaths = collectSectionFiles(project, "eventSheet", rootDir, log);
+  const layoutPaths = collectSectionFiles(project, "layout", rootDir, log);
   const scriptEntries = findScriptEntries(project.scriptsDir, config, log);
 
   log(
@@ -284,9 +285,7 @@ export function computeDomainData(
   const objectNameIndex = new Map<string, Set<string>>(); // object/family name → declaring domains
   const rawExprRefs = new Map<string, string[]>(); // domainName → referenced object/family names (raw)
 
-  for (const sheetPath of eventSheetPaths) {
-    const relPath = path.relative(rootDir, sheetPath).replace(/\\/g, "/");
-
+  for (const relPath of eventSheetPaths) {
     const domain = classifyFile(relPath, "eventSheet", config);
 
     if (!domain) {
@@ -305,7 +304,7 @@ export function computeDomainData(
     domainData.eventSheets.push({ path: relPath, directory });
 
     // Parse eventSheet for includes and functions
-    const content = fs.readFileSync(sheetPath, "utf-8");
+    const content = fs.readFileSync(path.join(rootDir, relPath), "utf-8");
     const sheet: EventSheet = JSON.parse(content);
     const sheetName = innerPath.replace(/\.json$/, "");
 
@@ -347,9 +346,8 @@ export function computeDomainData(
   }
 
   // Classify and attribute object types
-  const objectTypePaths = project.findAllObjectTypes();
-  for (const objectTypePath of objectTypePaths) {
-    const relPath = path.relative(rootDir, objectTypePath).replace(/\\/g, "/");
+  const objectTypePaths = collectSectionFiles(project, "objectType", rootDir, log);
+  for (const relPath of objectTypePaths) {
     const domain = classifyFile(relPath, "objectType", config);
 
     if (!domain) {
@@ -359,7 +357,7 @@ export function computeDomainData(
     }
 
     const domainData = domainDataMap.get(domain)!;
-    const content = fs.readFileSync(objectTypePath, "utf-8");
+    const content = fs.readFileSync(path.join(rootDir, relPath), "utf-8");
     const objectType: ObjectType = JSON.parse(content);
     domainData.addons.push(attributeObjectType(objectType));
 
@@ -368,9 +366,8 @@ export function computeDomainData(
   }
 
   // Classify and attribute families
-  const familyPaths = project.findAllFamilies();
-  for (const familyPath of familyPaths) {
-    const relPath = path.relative(rootDir, familyPath).replace(/\\/g, "/");
+  const familyPaths = collectSectionFiles(project, "family", rootDir, log);
+  for (const relPath of familyPaths) {
     const domain = classifyFile(relPath, "family", config);
 
     if (!domain) {
@@ -380,7 +377,7 @@ export function computeDomainData(
     }
 
     const domainData = domainDataMap.get(domain)!;
-    const content = fs.readFileSync(familyPath, "utf-8");
+    const content = fs.readFileSync(path.join(rootDir, relPath), "utf-8");
     const family: Family = JSON.parse(content);
     domainData.addons.push(attributeFamily(family));
 
@@ -389,8 +386,7 @@ export function computeDomainData(
   }
 
   // Classify layouts
-  for (const layoutPath of layoutPaths) {
-    const relPath = path.relative(rootDir, layoutPath).replace(/\\/g, "/");
+  for (const relPath of layoutPaths) {
     const domain = classifyFile(relPath, "layout", config);
 
     if (!domain) {
@@ -402,7 +398,7 @@ export function computeDomainData(
     const domainData = domainDataMap.get(domain)!;
 
     // Read layout to get eventSheet reference
-    const content = fs.readFileSync(layoutPath, "utf-8");
+    const content = fs.readFileSync(path.join(rootDir, relPath), "utf-8");
     const layout: Layout = JSON.parse(content);
     const eventSheet = (layout as Record<string, unknown>).eventSheet as string || "";
     const eventSheetDomain = eventSheet ? (sheetDomainLookup.get(eventSheet) ?? "") : "";

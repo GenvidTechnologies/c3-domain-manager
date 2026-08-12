@@ -160,16 +160,33 @@ describe("domainAnalysis", () => {
       );
     });
 
-    it("AC5 — does not report a non-script-extension file under one of the other four sections", () => {
+    it("AC5 — reports a non-section-source-extension file under one of the other four sections", () => {
       createFile(tmpDir, "layouts/Main/notes.txt");
+      createFile(tmpDir, "eventSheets/Orphan/stray.txt");
+      createFile(tmpDir, "eventSheets/Orphan/Real.json");
 
       const config = makeConfig(
         { Auth: { description: "Auth" } },
-        { overrides: { "layouts/Main/notes.txt": "Auth" } },
+        {
+          overrides: {
+            "layouts/Main/notes.txt": "Auth",
+            "eventSheets/Orphan/stray.txt": "Auth",
+            "eventSheets/Orphan/Real.json": "Auth",
+          },
+        },
       );
 
       const result = listInertOverrides(tmpDir, config);
-      assert.deepEqual(result, []);
+      const keys = result.map((r) => r.key).sort();
+      // Two sections, so this doesn't accidentally pin a layouts/-only
+      // behaviour. The .json negative control proves class 3 stayed a rule
+      // about extensions rather than becoming a blanket over every override
+      // in these sections — without it, a bug that flagged everything under
+      // eventSheets/layouts/objectTypes/families would pass just as well.
+      assert.deepEqual(keys, ["eventSheets/Orphan/stray.txt", "layouts/Main/notes.txt"]);
+      for (const entry of result) {
+        assert.include(entry.reason, "has no .json extension");
+      }
     });
 
     it("AC6 — reports a trailing-slash key naming a real directory", () => {
@@ -492,23 +509,64 @@ describe("domainAnalysis", () => {
       assert.deepEqual(result, ["scripts/main.ts", "scripts/onlyjs.js"]);
     });
 
-    it("R-D2 — the four non-script section walks still report a stray file individually, unaffected by the scripts/ delegation", () => {
+    it("R-D2 — the four non-script section walks admit only .json section source, dropping a non-.json stray beside it", () => {
       createFile(tmpDir, "eventSheets/Orphan/notes.md");
+      createFile(tmpDir, "eventSheets/Orphan/Real.json");
       createFile(tmpDir, "families/Orphan/notes.md");
+      createFile(tmpDir, "families/Orphan/Real.json");
       createFile(tmpDir, "layouts/Orphan/r.txt");
+      createFile(tmpDir, "layouts/Orphan/Real.json");
       createFile(tmpDir, "objectTypes/Orphan/i.png");
+      createFile(tmpDir, "objectTypes/Orphan/Real.json");
 
       const config = makeConfig({
         Auth: { description: "Auth" },
       });
 
       const result = listUncategorized(tmpDir, config);
+      // Real.json is the positive control: without it, this test would pass
+      // just as well if all four walks silently returned nothing.
       assert.deepEqual(result, [
-        "eventSheets/Orphan/notes.md",
-        "families/Orphan/notes.md",
-        "layouts/Orphan/r.txt",
-        "objectTypes/Orphan/i.png",
+        "eventSheets/Orphan/Real.json",
+        "families/Orphan/Real.json",
+        "layouts/Orphan/Real.json",
+        "objectTypes/Orphan/Real.json",
       ]);
+    });
+
+    it("guards the section-source filter ORDER, not just uistate exclusion: isSectionSourceName alone would re-admit a .uistate.json", () => {
+      // layouts/ is deliberately unclaimed (no layoutDirs on Auth), so both
+      // files fall straight through to the uncategorized/unclassified walk
+      // instead of being resolved by a domain dir or an override.
+      createFile(tmpDir, "layouts/Main.uistate.json");
+      createFile(tmpDir, "layouts/Main.json");
+
+      const config = makeConfig({
+        Auth: { description: "Auth" },
+      });
+
+      // Main.uistate.json ends in ".json" -- isSectionSourceName, taken on
+      // its own, would happily admit it. Its absence below is proof that
+      // c3source's editor-local exclusion (applied inside the C3Project walk
+      // collectSectionFiles reads from) ran BEFORE isSectionSourceName's
+      // extension check, not that the extension check is somehow stricter
+      // than it looks. This is deliberately not a duplicate of the "we don't
+      // report uistate files" tests elsewhere in this suite -- what's unique
+      // here is pinning the ORDER of the two filters. A future refactor that
+      // "simplifies the two walks into one" by running isSectionSourceName as
+      // a standalone predicate -- instead of downstream of a collector that
+      // already applied isEditorLocalPath -- would silently re-admit this
+      // file, and nothing else in the suite would notice.
+      const uncategorized = listUncategorized(tmpDir, config);
+      assert.notInclude(uncategorized, "layouts/Main.uistate.json");
+
+      const { unclassified } = computeDomainData(tmpDir, config);
+      assert.notInclude(unclassified, "layouts/Main.uistate.json");
+
+      // Positive control -- without it, this test would pass just as well if
+      // the entire layouts/ walk silently returned nothing on both surfaces.
+      assert.include(uncategorized, "layouts/Main.json");
+      assert.include(unclassified, "layouts/Main.json");
     });
   });
 });

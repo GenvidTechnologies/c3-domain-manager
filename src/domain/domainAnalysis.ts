@@ -1,61 +1,40 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { openProject, find_all_files_path, isEditorLocalPath } from "@genvidtech/c3source";
+import { openProject, isEditorLocalPath } from "@genvidtech/c3source";
 import {
   classifyFile,
   VALID_PREFIXES,
   FILE_TYPES,
   isScriptSourceName,
+  isSectionSourceName,
   isCompiledSibling,
   isReportableScriptDir,
+  collectSectionFiles,
 } from "./classification.js";
 import { findScriptEntries } from "./domainGenerator.js";
 import type { DomainConfig } from "./types.js";
 
 /**
- * Recursively collect absolute paths of C3 *source* files under a directory.
- * Skips C3-editor-local artifacts (*.uistate.json, uistate/ dirs, tsconfig.json)
- * via c3source's isEditorLocalPath — the single owner of that C3 platform fact.
- * Returns an empty array if the directory doesn't exist (find_all_files_path
- * throws ENOENT rather than tolerating an absent dir).
- */
-function walkSource(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  return find_all_files_path(dir, (name) => !isEditorLocalPath(name));
-}
-
-/**
- * classifyFile/overrides require section-rooted forward-slash paths; the
- * walker returns absolute native-separator ones. The /g flag matters on
- * Windows.
- */
-const relativize = (baseDir: string) => (p: string) =>
-  path.relative(baseDir, p).replace(/\\/g, "/");
-
-/**
- * Recursively collect C3 *source* files under a directory, returning paths
- * relative to baseDir (forward-slash — the form classifyFile/overrides require).
- */
-function collectSourceFiles(dir: string, baseDir: string): string[] {
-  return walkSource(dir).map(relativize(baseDir));
-}
-
-/**
  * Scan eventSheets/, layouts/, scripts/, objectTypes/ and families/ and return the
  * paths classifyFile() returns null for (sorted).
  *
- * The four non-script sections are walked here per file. scripts/ is not: it delegates
- * to findScriptEntries, the same enumeration computeDomainData builds DomainData from,
- * so this command reports exactly what the generated index would leave unclassified
- * (ADR 0017). That means a scripts/ result may be a *directory* path with a trailing
- * slash, where the whole directory is attributed as a unit.
+ * The four non-script sections are all enumerated through the one shared
+ * `collectSectionFiles` seam (classification.ts), which admits only section
+ * *source* (`.json`) — `list-uncategorized` is the worklist for the domain
+ * index, and a file the index can't parse has no index representation to
+ * gain by being reported here (ADR 0020). scripts/ is not: it delegates to
+ * findScriptEntries, the same enumeration computeDomainData builds
+ * DomainData from, so this command reports exactly what the generated index
+ * would leave unclassified (ADR 0017). That means a scripts/ result may be a
+ * *directory* path with a trailing slash, where the whole directory is
+ * attributed as a unit.
  */
 export function listUncategorized(rootDir: string, config: DomainConfig): string[] {
   const uncategorized: string[] = [];
   const project = openProject(rootDir);
 
   // EventSheets
-  const eventSheetFiles = collectSourceFiles(project.eventSheetsDir, rootDir);
+  const eventSheetFiles = collectSectionFiles(project, "eventSheet", rootDir);
   for (const file of eventSheetFiles) {
     if (classifyFile(file, "eventSheet", config) === null) {
       uncategorized.push(file);
@@ -63,7 +42,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Layouts
-  const layoutFiles = collectSourceFiles(project.layoutsDir, rootDir);
+  const layoutFiles = collectSectionFiles(project, "layout", rootDir);
   for (const file of layoutFiles) {
     if (classifyFile(file, "layout", config) === null) {
       uncategorized.push(file);
@@ -79,7 +58,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Object types
-  const objectTypeFiles = collectSourceFiles(project.objectTypesDir, rootDir);
+  const objectTypeFiles = collectSectionFiles(project, "objectType", rootDir);
   for (const file of objectTypeFiles) {
     if (classifyFile(file, "objectType", config) === null) {
       uncategorized.push(file);
@@ -87,7 +66,7 @@ export function listUncategorized(rootDir: string, config: DomainConfig): string
   }
 
   // Families
-  const familyFiles = collectSourceFiles(project.familiesDir, rootDir);
+  const familyFiles = collectSectionFiles(project, "family", rootDir);
   for (const file of familyFiles) {
     if (classifyFile(file, "family", config) === null) {
       uncategorized.push(file);
@@ -130,9 +109,11 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  *      keeps `ts-defs/` walked, ADR 0013).
  *   2. Compiled sibling (`scripts/` only): a `.js` whose same-basename `.ts`
  *      sits beside it — `findScriptEntries` suppresses it (ADR 0016).
- *   3. Non-source extension (`scripts/` only): the basename isn't `.ts`/`.js`
- *      — the other four sections admit any extension, so this class never
- *      applies to them.
+ *   3. Non-source extension (all five sections): the basename fails the
+ *      section's admission rule — `scripts/` admits authored script source
+ *      (`.ts`/`.js`, ADR 0016); the other four admit section source
+ *      (`.json`, ADR 0020), the format `computeDomainData` can parse into
+ *      the domain index.
  *   4. Trailing slash: `classifyFile` normalizes a walk's directory-entry
  *      path before matching overrides, so a key that itself carries the
  *      slash can never match.
@@ -251,20 +232,26 @@ export function listInertOverrides(
       continue;
     }
 
-    // Classes 2 and 3 — scripts/ only, files only. A directory-shaped key
-    // already `continue`d above in the class-5 branch, so a key that reaches
-    // here is guaranteed to name a file.
-    if (fileType === "script") {
-      if (!isScriptSourceName(basename)) {
-        results.push({
-          key,
-          reason:
-            `'${basename}' has no .ts or .js extension; the scripts/ walk only admits ` +
-            `authored script source, so this key can never be produced.`,
-        });
-        continue;
-      }
+    // Class 3 — non-source extension, all five sections. A directory-shaped
+    // key already `continue`d above in the class-5 branch, so a key that
+    // reaches here is guaranteed to name a file.
+    const admits = fileType === "script" ? isScriptSourceName : isSectionSourceName;
+    if (!admits(basename)) {
+      results.push({
+        key,
+        reason:
+          fileType === "script"
+            ? `'${basename}' has no .ts or .js extension; the scripts/ walk only admits ` +
+              `authored script source, so this key can never be produced.`
+            : `'${basename}' has no .json extension; the ${root} walk only admits section ` +
+              `source — the format the domain index can parse — so this key can never be ` +
+              `produced.`,
+      });
+      continue;
+    }
 
+    // Class 2 — compiled sibling, scripts/ only, files only.
+    if (fileType === "script") {
       const siblingNames = new Set(fs.readdirSync(path.dirname(fullPath)));
       if (isCompiledSibling(basename, siblingNames)) {
         results.push({
