@@ -164,11 +164,12 @@ the `@genvidtech` scope: `0.0.1`, `0.6.1`, `0.6.2`, `0.7.0`.
 - **`0.0.1` (2026-06-30) is not a real release.** It is an OIDC
   trusted-publishing bootstrap stub, published to establish the trusted
   publisher relationship before the first real release went out.
-- **Every tagged version from `0.1.0` through the unreleased `0.6.0` work
-  was never published to npm.** They existed only as `@genvid/*`-scoped
-  `package.json` versions and git tags. `0.6.1` (2026-06-30), published
-  under the renamed `@genvidtech` scope, is the first version that ever
-  reached the npm registry.
+- **Nothing before `0.6.1` was ever published to npm** — every tagged
+  version from `0.1.0` through `0.5.0`, plus the untagged `0.6.0` work.
+  They existed only as `@genvid/*`-scoped `package.json` versions and, for
+  `0.1.0`–`0.5.0`, git tags. `0.6.1` (2026-06-30), published under the
+  renamed `@genvidtech` scope, is the first version that ever reached the
+  npm registry.
 
 There is also a stray unprefixed `0.1.0` tag (dated 2026-04-03, predating the
 `v`-prefixed `v0.1.0` tag above) left over from before the tag naming
