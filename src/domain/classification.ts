@@ -1,4 +1,7 @@
+import path from "node:path";
 import { isEditorLocalPath, C3_TS_DEFS_FOLDER } from "@genvidtech/c3source";
+import type { C3Project } from "@genvidtech/c3source";
+import type { Logger } from "@genvidtech/mcp-utils";
 import type { DomainConfig, DomainDefinition } from "./types.js";
 
 /**
@@ -222,4 +225,74 @@ export function isCompiledSibling(name: string, siblingNames: ReadonlySet<string
  */
 export function isReportableScriptDir(name: string): boolean {
   return !isEditorLocalPath(name) || name === C3_TS_DEFS_FOLDER;
+}
+
+/**
+ * The four non-script section walks, keyed by file type, as the collector
+ * FUNCTION itself — not a static field describing the collector, the way
+ * `FILE_TYPES.emitsDirectories` describes `scripts/`'s walk.
+ *
+ * ADR 0019's failure mode was a static table that *claims* a fact about a
+ * walk and can be plausibly wrong (three ways, measured, in that issue). A
+ * table that IS the walk cannot be plausibly wrong in the same way — a
+ * mis-wired entry here fails the cross-section agreement test immediately,
+ * rather than silently drifting from what `C3Project` actually does. This
+ * also keeps `FILE_TYPES` (public API via `src/index.ts`) from re-encoding
+ * c3source's per-section predicates locally, which would go stale on a
+ * c3source bump with nothing here to notice.
+ *
+ * `scripts/` is deliberately absent: its enumeration is `findScriptEntries`
+ * (`domainGenerator.ts`, ADR 0017), which must emit directory entries that
+ * these collectors cannot produce. `SectionFileType` excludes "script", so
+ * asking `collectSectionFiles` for it is a compile-time error, not a runtime
+ * gap.
+ */
+const SECTION_COLLECTORS = {
+  eventSheet: (p: C3Project) => p.findAllEventSheets(),
+  layout: (p: C3Project) => p.findAllLayouts(),
+  objectType: (p: C3Project) => p.findAllObjectTypes(),
+  family: (p: C3Project) => p.findAllFamilies(),
+} as const;
+
+export type SectionFileType = keyof typeof SECTION_COLLECTORS;
+
+/**
+ * Walk one of the four non-script sections via `SECTION_COLLECTORS`,
+ * relativize each result to `rootDir`, and drop anything `isSectionSourceName`
+ * rejects.
+ *
+ * The relativize idiom is `path.relative(rootDir, p).replace(/\\/g, "/")` —
+ * the `g` flag is load-bearing on Windows: without it only the first
+ * backslash converts, and the failure is silent (wrong domain assignments,
+ * no exception). See issue #37.
+ *
+ * No `fs.existsSync` guard: c3source's `findInSection` (the shared helper
+ * behind every `C3Project.findAll*` method) already returns `[]` for an
+ * absent section directory, so an absent `eventSheets/`/`layouts/`/
+ * `objectTypes/`/`families/` yields an empty result here rather than
+ * throwing.
+ *
+ * Every dropped file is logged by relative path — the mitigation for the
+ * accepted cost of `isSectionSourceName` silently discarding a genuinely
+ * misfiled asset.
+ */
+export function collectSectionFiles(
+  project: C3Project,
+  fileType: SectionFileType,
+  rootDir: string,
+  log: Logger = () => {},
+): string[] {
+  const absolutePaths = SECTION_COLLECTORS[fileType](project);
+  const kept: string[] = [];
+
+  for (const absolutePath of absolutePaths) {
+    const relPath = path.relative(rootDir, absolutePath).replace(/\\/g, "/");
+    if (isSectionSourceName(path.basename(relPath))) {
+      kept.push(relPath);
+    } else {
+      log(`  Dropped non-section-source file: ${relPath}`);
+    }
+  }
+
+  return kept;
 }
