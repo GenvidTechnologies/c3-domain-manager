@@ -18,9 +18,21 @@ npm test            # pretest materializes the fixture, then mocha + tsx over te
 npm run lint        # eslint, --max-warnings 0 (CI fails on any warning)
 npm run typecheck   # tsc -p tsconfig.test.json --noEmit (type-checks src AND test)
 npm run fixture:prep # rebuild test/fixtures/canonical/ from the construct3-sample submodule
+npm run corpus:scan -- <dir>  # authored-script population across a local C3 corpus
 ```
 
 Run a single test file: `npm run test:file -- test/domain/health.test.ts`
+
+`corpus:scan` answers the recurring "how many X are there really, across real projects"
+question that several ADRs rest on (0009, 0016, 0021) — `.ts`/`.js` sibling pairs, orphan
+`.js`, per-project totals. It takes corpus roots as arguments or via `C3_CORPUS_ROOTS`,
+never hardcoded, since the corpus is machine-local and this repo's docs convention forbids
+committing such paths. It anchors discovery on `project.c3proj` — **a scan keyed off
+directory names instead would walk a project's own `extracted/` tree, which contains
+`eventSheets/`, `layouts/` and `scripts/` directories, and silently count generated output
+as source.** It also flags likely duplicate checkouts of the same upstream project rather
+than silently double-counting them into the totals. Re-run it instead of citing a figure
+from an older record: the numbers were measured, and the corpus moves.
 
 **Use `test:file`, not `npm test -- <path>`, and not a bare `npx mocha`.** Two
 separate traps. First, mocha *merges* a positional path with the spec glob
@@ -100,6 +112,10 @@ surprising in the diff.
 ## Key dependencies
 
 **Bumping either dependency is a two-place change: `package.json` *and* the stated floor in this file.** The floors below are documentation, so they drift silently — a bump that updates only `package.json` leaves this file asserting a version the code no longer requires (caught by code review in issue #33, after the fact). Update both in the same commit, and add the adoption to the "When bumping …" chain below so the *reason* the new floor is load-bearing is recorded, not just the number.
+
+**Nothing here detects that a release has happened — run `npm view <pkg> dist-tags` before trusting any version claim in this file.** The chain below is full of *forward-looking triggers* ("re-check on the next bump", "the next release fires this trigger"), and every one of them fires on an event outside this repo that no test, lint rule, or CI gate observes. The failure is silent and the prose stays fluent: this file asserted c3source 1.9.0 was latest and `c3source#73` unreleased for some time after **2.0.0** had shipped — carrying `SCRIPT_SOURCE_EXTENSIONS` and `isGeneratedScriptOutput`, the two things those triggers were waiting for (issue #48, [ADR 0021](docs/decisions/0021-decline-drift-diagnostic.md)). It was caught only because a task happened to check npm. **Note the direction of the risk**: the rest of this section tells you how to *verify a release you have already decided to adopt* (`npm pack`, read the packed `.d.ts`, read the packed `.js` for behaviour) — it does not tell you a release exists. Those are different questions, and only the second one goes stale on its own. A dependency major can also land *mid-task* and invert a claim this file makes, so a check at the start of a long task is not a check at the end of it.
+
+**Proving a bump changed no output has no supported route, so here is the one that works.** The central safety question on any dependency bump is whether the analysis output moved, and a green suite is a weaker answer than it looks — it proves no *assertion* broke, not that nothing changed. Measure it directly: dump `computeDomainData(fixtureProjectPath(), FIXTURE_CONFIG, () => {})` as JSON via a scratchpad `tsx` script, then `git checkout <base> -- src/ test/ package.json package-lock.json && npm ci` to restore the pre-bump tree, dump again, `diff`, and restore. Do **not** reach for the CLI here: `FIXTURE_CONFIG` is held in memory precisely so the fixture stays byte-identical to canonical, so a CLI run would need a `domain-config.json` written into the fixture — mutating the thing being measured. This is how the c3source 2.0.0 section-narrowing was shown to be output-neutral in issue #48.
 
 Two dependencies are published public packages on npm, installed normally via `npm install` (no special setup):
 
