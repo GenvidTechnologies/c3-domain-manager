@@ -1462,6 +1462,59 @@ describe("findScriptEntries", () => {
   });
 });
 
+describe("computeDomainData — non-.json strays in claimed section dirs (issue #52)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("domainGenerator-section-strays-");
+    fs.mkdirSync(path.join(tmpDir, "eventSheets"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "scripts"), { recursive: true });
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  it("does not crash on a non-.json stray in a claimed layoutDirs/objectTypeDirs directory, and still classifies the real .json file (previously threw SyntaxError from JSON.parse on the stray)", () => {
+    createFile(tmpDir, "layouts/Main/Real.json", layoutJson("Real"));
+    createFile(tmpDir, "layouts/Main/notes.txt", "not json");
+    createFile(tmpDir, "objectTypes/Main/Real.json", makeObjectType("Real", "Sprite"));
+    createFile(tmpDir, "objectTypes/Main/i.png", "not json");
+
+    const config: DomainConfig = {
+      domains: {
+        Main: { description: "Main", layoutDirs: ["Main"], objectTypeDirs: ["Main"] },
+      },
+    };
+
+    const logs: string[] = [];
+    let result: ReturnType<typeof computeDomainData> | undefined;
+    assert.doesNotThrow(() => {
+      result = computeDomainData(tmpDir, config, (...args: unknown[]) => logs.push(String(args[0])));
+    });
+    assert.isDefined(result);
+
+    const main = result!.domains.find((d) => d.name === "Main")!;
+
+    // Positive control: the real .json files were still found and classified.
+    assert.deepEqual(
+      main.layouts.map((l) => l.path),
+      ["layouts/Main/Real.json"],
+    );
+    assert.equal(main.addons.length, 1);
+    assert.equal(main.addons[0].name, "Real");
+
+    // Neither stray appears in unclassified — they were dropped, not misfiled.
+    assert.deepEqual(result!.unclassified, []);
+
+    // The drop is observable via the logger (T16).
+    assert.isTrue(
+      logs.some((l) => l.includes("layouts/Main/notes.txt")),
+      "expected a dropped-file log line naming layouts/Main/notes.txt",
+    );
+  });
+});
+
 describe("computeDomainData — nested scriptDirs claim (issue #51)", () => {
   let tmpDir: string;
 
