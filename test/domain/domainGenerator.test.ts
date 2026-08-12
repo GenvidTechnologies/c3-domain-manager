@@ -1460,6 +1460,36 @@ describe("findScriptEntries", () => {
     assert.deepInclude(result, { relativePath: "scripts/ts-defs/behaviors/", isDirectory: true });
     assert.isFalse(result.some((e) => e.relativePath.includes("uistate")));
   });
+
+  // isGeneratedScriptOutput (issue #48) compares extensions case-insensitively,
+  // unlike the retired local isCompiledSibling.
+  it("suppresses a .js compiled sibling case-insensitively", () => {
+    createFile(scriptsDir, "Main.JS");
+    createFile(scriptsDir, "main.ts");
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.isUndefined(result.find((entry) => entry.relativePath === "scripts/Main.JS"));
+  });
+
+  it("does not over-suppress a .js with a different basename .ts sibling", () => {
+    createFile(scriptsDir, "a.js");
+    createFile(scriptsDir, "b.ts");
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.deepInclude(result, { relativePath: "scripts/a.js", isDirectory: false });
+  });
+
+  it("forced descent into ts-defs/sub/ still reports the loose ts-defs/ .d.ts sibling", () => {
+    createFile(scriptsDir, "ts-defs/objects.d.ts");
+    createFile(scriptsDir, "ts-defs/sub/x.ts");
+    const config = makeConfig({ Core: { description: "Core", scriptDirs: ["ts-defs/sub"] } });
+
+    const result = findScriptEntries(scriptsDir, config);
+
+    assert.deepInclude(result, { relativePath: "scripts/ts-defs/objects.d.ts", isDirectory: false });
+  });
 });
 
 describe("computeDomainData — non-.json strays in claimed section dirs (issue #52)", () => {

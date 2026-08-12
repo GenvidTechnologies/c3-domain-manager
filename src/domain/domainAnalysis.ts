@@ -1,13 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { openProject, isEditorLocalPath } from "@genvidtech/c3source";
+import { openProject, isEditorLocalPath, isGeneratedScriptOutput } from "@genvidtech/c3source";
 import {
   classifyFile,
   VALID_PREFIXES,
   FILE_TYPES,
   isScriptSourceName,
   isSectionSourceName,
-  isCompiledSibling,
   isReportableScriptDir,
   collectSectionFiles,
 } from "./classification.js";
@@ -252,8 +251,12 @@ export function listInertOverrides(
 
     // Class 2 — compiled sibling, scripts/ only, files only.
     if (fileType === "script") {
+      // siblingNames MUST be scoped to this one directory (fs.readdirSync of
+      // path.dirname(fullPath) only) — c3source states that contract only on
+      // filterAuthoredScriptPaths, not on isGeneratedScriptOutput itself, so a
+      // whole-tree sibling set here would over-suppress across directories.
       const siblingNames = new Set(fs.readdirSync(path.dirname(fullPath)));
-      if (isCompiledSibling(basename, siblingNames)) {
+      if (isGeneratedScriptOutput(basename, siblingNames)) {
         results.push({
           key,
           reason:
