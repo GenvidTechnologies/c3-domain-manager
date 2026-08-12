@@ -153,6 +153,42 @@ export function isScriptSourceName(name: string): boolean {
 }
 
 /**
+ * Section source extensions — the files the domain index can parse and
+ * therefore represent: eventSheets/, layouts/, objectTypes/ and families/ are
+ * all authored as .json, and computeDomainData reaches each one through a
+ * JSON.parse. A file this rule rejects has no index representation, because
+ * there is nothing downstream that could parse it. ADR 0020.
+ *
+ * ORDERING HAZARD — MUST run on a collector's *output*, never as a standalone
+ * walk predicate. `Main.uistate.json` ends in .json and would be re-admitted
+ * by this rule alone, re-introducing every editor-local artifact ADR 0013
+ * removed. Editor-local exclusion is c3source's (isEditorLocalPath, applied
+ * inside the collectors) and must run first. The collision is *actual* here,
+ * where for isScriptSourceName above it is merely hypothetical — no editor-local
+ * exclusion ends in .ts/.js today. Note that findScriptEntries does not rely on
+ * that: it applies isEditorLocalPath unconditionally, because the non-collision
+ * "was only ever an accident of c3source's current list, and that list is
+ * c3source's to change" (domainGenerator.ts, the FILE branch of findScriptEntries;
+ * ADR 0013 #1). The same reasoning applies with more force here, the difference
+ * being that this rule has no walk of its own to guard — so the ordering above is
+ * the whole of its protection.
+ *
+ * PLATFORM-ADJACENT, LOCAL BY DECISION: unlike SCRIPT_SOURCE_EXTENSIONS above
+ * (a platform fact c3source doesn't export yet), this list is product policy,
+ * not a platform fact — it is derived from what computeDomainData parses,
+ * not from what C3 permits on disk. c3source deliberately keeps its four
+ * section finders' extension policies inconsistent and filters at each parse
+ * boundary instead (GenvidTechnologies/c3source#76 is the open question on
+ * whether that's intentional; re-check this list when it resolves).
+ */
+export const SECTION_SOURCE_EXTENSIONS = [".json"] as const;
+
+/** Takes a bare basename, the same contract as isScriptSourceName above. */
+export function isSectionSourceName(name: string): boolean {
+  return SECTION_SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/**
  * Clause 1 — compiled-sibling suppression. True when `name` is a .js whose
  * same-basename .ts sibling exists in the same directory: it is tsc output of a
  * file we already report (or is indistinguishable from it — see ADR 0016's
