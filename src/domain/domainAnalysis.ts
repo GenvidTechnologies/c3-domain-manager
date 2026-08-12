@@ -6,6 +6,7 @@ import {
   VALID_PREFIXES,
   FILE_TYPES,
   isScriptSourceName,
+  isSectionSourceName,
   isCompiledSibling,
   isReportableScriptDir,
   collectSectionFiles,
@@ -108,9 +109,11 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  *      keeps `ts-defs/` walked, ADR 0013).
  *   2. Compiled sibling (`scripts/` only): a `.js` whose same-basename `.ts`
  *      sits beside it — `findScriptEntries` suppresses it (ADR 0016).
- *   3. Non-source extension (`scripts/` only): the basename isn't `.ts`/`.js`
- *      — the other four sections admit any extension, so this class never
- *      applies to them.
+ *   3. Non-source extension (all five sections): the basename fails the
+ *      section's admission rule — `scripts/` admits authored script source
+ *      (`.ts`/`.js`, ADR 0016); the other four admit section source
+ *      (`.json`, ADR 0020), the format `computeDomainData` can parse into
+ *      the domain index.
  *   4. Trailing slash: `classifyFile` normalizes a walk's directory-entry
  *      path before matching overrides, so a key that itself carries the
  *      slash can never match.
@@ -229,20 +232,26 @@ export function listInertOverrides(
       continue;
     }
 
-    // Classes 2 and 3 — scripts/ only, files only. A directory-shaped key
-    // already `continue`d above in the class-5 branch, so a key that reaches
-    // here is guaranteed to name a file.
-    if (fileType === "script") {
-      if (!isScriptSourceName(basename)) {
-        results.push({
-          key,
-          reason:
-            `'${basename}' has no .ts or .js extension; the scripts/ walk only admits ` +
-            `authored script source, so this key can never be produced.`,
-        });
-        continue;
-      }
+    // Class 3 — non-source extension, all five sections. A directory-shaped
+    // key already `continue`d above in the class-5 branch, so a key that
+    // reaches here is guaranteed to name a file.
+    const admits = fileType === "script" ? isScriptSourceName : isSectionSourceName;
+    if (!admits(basename)) {
+      results.push({
+        key,
+        reason:
+          fileType === "script"
+            ? `'${basename}' has no .ts or .js extension; the scripts/ walk only admits ` +
+              `authored script source, so this key can never be produced.`
+            : `'${basename}' has no .json extension; the ${root} walk only admits section ` +
+              `source — the format the domain index can parse — so this key can never be ` +
+              `produced.`,
+      });
+      continue;
+    }
 
+    // Class 2 — compiled sibling, scripts/ only, files only.
+    if (fileType === "script") {
       const siblingNames = new Set(fs.readdirSync(path.dirname(fullPath)));
       if (isCompiledSibling(basename, siblingNames)) {
         results.push({

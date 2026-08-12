@@ -160,16 +160,33 @@ describe("domainAnalysis", () => {
       );
     });
 
-    it("AC5 — does not report a non-script-extension file under one of the other four sections", () => {
+    it("AC5 — reports a non-section-source-extension file under one of the other four sections", () => {
       createFile(tmpDir, "layouts/Main/notes.txt");
+      createFile(tmpDir, "eventSheets/Orphan/stray.txt");
+      createFile(tmpDir, "eventSheets/Orphan/Real.json");
 
       const config = makeConfig(
         { Auth: { description: "Auth" } },
-        { overrides: { "layouts/Main/notes.txt": "Auth" } },
+        {
+          overrides: {
+            "layouts/Main/notes.txt": "Auth",
+            "eventSheets/Orphan/stray.txt": "Auth",
+            "eventSheets/Orphan/Real.json": "Auth",
+          },
+        },
       );
 
       const result = listInertOverrides(tmpDir, config);
-      assert.deepEqual(result, []);
+      const keys = result.map((r) => r.key).sort();
+      // Two sections, so this doesn't accidentally pin a layouts/-only
+      // behaviour. The .json negative control proves class 3 stayed a rule
+      // about extensions rather than becoming a blanket over every override
+      // in these sections — without it, a bug that flagged everything under
+      // eventSheets/layouts/objectTypes/families would pass just as well.
+      assert.deepEqual(keys, ["eventSheets/Orphan/stray.txt", "layouts/Main/notes.txt"]);
+      for (const entry of result) {
+        assert.include(entry.reason, "has no .json extension");
+      }
     });
 
     it("AC6 — reports a trailing-slash key naming a real directory", () => {
