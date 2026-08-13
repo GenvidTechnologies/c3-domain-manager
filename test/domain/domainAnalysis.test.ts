@@ -189,6 +189,66 @@ describe("domainAnalysis", () => {
       }
     });
 
+    it("T3 — case-sensitivity: .JSON is not admitted, lowercase .json is (positive control)", () => {
+      createFile(tmpDir, "layouts/Main/Data.JSON");
+      createFile(tmpDir, "layouts/Main/Data.json");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "layouts/Main/Data.JSON": "Auth",
+            "layouts/Main/Data.json": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      // Both assertions in one run: the uppercase extension is rejected today
+      // (pins the admission rule's case-sensitivity — a future upstream
+      // widening to accept .JSON would surface here as a failing test rather
+      // than a silent output change), and the lowercase sibling is the
+      // positive control proving the rule is about case, not about this file
+      // wholesale.
+      const uppercase = result.find((r) => r.key === "layouts/Main/Data.JSON");
+      assert.isDefined(uppercase);
+      assert.include(uppercase!.reason, "has no .json extension");
+      assert.notInclude(keys, "layouts/Main/Data.json");
+    });
+
+    it("T4 — ORDER guard: an editor-local uistate override is reported for its artifact reason, not the extension reason", () => {
+      createFile(tmpDir, "eventSheets/Orphan/OrphanEvents.uistate.json");
+      createFile(tmpDir, "eventSheets/Orphan/stray.txt");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "eventSheets/Orphan/OrphanEvents.uistate.json": "Auth",
+            "eventSheets/Orphan/stray.txt": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      // OrphanEvents.uistate.json ends in ".json" -- if the extension check
+      // (class 3) ran before the editor-local check (class 1), this key
+      // would be silently admitted and vanish from the report entirely,
+      // rather than being reported for the artifact reason. This pins the
+      // ORDER, not just that the key is reported at all.
+      const uistate = result.find((r) => r.key === "eventSheets/Orphan/OrphanEvents.uistate.json");
+      assert.isDefined(uistate);
+      assert.include(uistate!.reason, "C3-editor-local artifact");
+
+      // Positive control -- without it, this test would pass just as well if
+      // every override under eventSheets/Orphan were reported regardless of
+      // reason.
+      const stray = result.find((r) => r.key === "eventSheets/Orphan/stray.txt");
+      assert.isDefined(stray);
+      assert.include(stray!.reason, "has no .json extension");
+    });
+
     it("AC6 — reports a trailing-slash key naming a real directory", () => {
       createFile(tmpDir, "scripts/other/foo.ts");
 
