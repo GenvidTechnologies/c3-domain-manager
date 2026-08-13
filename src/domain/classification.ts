@@ -5,7 +5,6 @@ import {
   SCRIPT_SOURCE_EXTENSIONS,
 } from "@genvidtech/c3source";
 import type { C3Project } from "@genvidtech/c3source";
-import type { Logger } from "@genvidtech/mcp-utils";
 import type { DomainConfig, DomainDefinition } from "./types.js";
 
 /**
@@ -17,7 +16,7 @@ import type { DomainConfig, DomainDefinition } from "./types.js";
  * `findScriptEntries` collapses an unclaimed, non-layer directory into a
  * single `"scripts/<name>/"` entry. The other four sections go through
  * `collectSectionFiles`, whose `C3Project.findAll*` collectors only ever
- * yield files (ADR 0020; before that they walked `find_all_files_path`
+ * yield files (ADR 0020, ADR 0022; before that they walked `find_all_files_path`
  * directly — same conclusion, different route). `listInertOverrides` uses
  * this to decide whether a directory-shaped override key could ever be
  * produced by the section's walk at all, before asking whether it actually is.
@@ -177,52 +176,6 @@ export function isScriptSourceName(name: string): boolean {
 }
 
 /**
- * Section source extensions — the files the domain index can parse and
- * therefore represent: eventSheets/, layouts/, objectTypes/ and families/ are
- * all authored as .json, and computeDomainData reaches each one through a
- * JSON.parse. A file this rule rejects has no index representation, because
- * there is nothing downstream that could parse it. ADR 0020.
- *
- * ORDERING HAZARD — MUST run on a collector's *output*, never as a standalone
- * walk predicate. `Main.uistate.json` ends in .json and would be re-admitted
- * by this rule alone, re-introducing every editor-local artifact ADR 0013
- * removed. Editor-local exclusion is c3source's (isEditorLocalPath, applied
- * inside the collectors) and must run first. The collision is *actual* here,
- * where for isScriptSourceName above it is merely hypothetical — no editor-local
- * exclusion ends in .ts/.js today. Note that findScriptEntries does not rely on
- * that: it applies isEditorLocalPath unconditionally, because the non-collision
- * "was only ever an accident of c3source's current list, and that list is
- * c3source's to change" (domainGenerator.ts, the FILE branch of findScriptEntries;
- * ADR 0013 #1). The same reasoning applies with more force here, the difference
- * being that this rule has no walk of its own to guard — so the ordering above is
- * the whole of its protection.
- *
- * PLATFORM-ADJACENT, LOCAL BY DECISION: unlike SCRIPT_SOURCE_EXTENSIONS above
- * — a platform fact, held locally only until c3source exported it, and retired
- * to upstream in issue #48 once it did — this list is product policy. It is
- * derived from what computeDomainData parses, not from what C3 permits on disk,
- * so upstream resolving its own question does not settle ours.
- *
- * UNREACHABLE AS OF c3source 2.0.0, AND DELIBERATELY KEPT ANYWAY. 2.0.0
- * narrowed find_all_layouts_path and find_all_objectTypes_path to .json,
- * joining eventsheets and families, so all four collectors behind
- * collectSectionFiles now drop non-.json upstream and nothing arrives for this
- * rule to reject. (GenvidTechnologies/c3source#76 asked whether the previous
- * inconsistency was intentional; 2.0.0 answered by unifying them.) The rule
- * still states a true thing about *our* parse boundary, which is what ADR 0020
- * actually argued — but an unreachable filter cannot be tested, and an
- * untestable rule decays silently. Whether to keep it, retire it, or keep the
- * constant without the log line is issue #60; this was left alone in #48
- * because re-litigating ADR 0020 was not that spike's subject.
- */
-export const SECTION_SOURCE_EXTENSIONS = [".json"] as const;
-
-/** Takes a bare basename, the same contract as isScriptSourceName above. */
-export function isSectionSourceName(name: string): boolean {
-  return SECTION_SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext));
-}
-
-/**
  * A directory under scripts/ worth reporting as a classifiable entry.
  * Excludes C3-editor-local dirs (uistate/) — never project source, never a domain.
  * ts-defs/ is the deliberate exemption: it IS editor-generated, but this tool keeps
@@ -268,42 +221,40 @@ const SECTION_COLLECTORS = {
 export type SectionFileType = keyof typeof SECTION_COLLECTORS;
 
 /**
- * Walk one of the four non-script sections via `SECTION_COLLECTORS`,
- * relativize each result to `rootDir`, and drop anything `isSectionSourceName`
- * rejects.
+ * Walk one of the four non-script sections via `SECTION_COLLECTORS` and
+ * relativize each result to `rootDir`. No filter: as of c3source 2.0.0 every
+ * `C3Project.findAll*` collector already admits only `.json` name-section
+ * items and excludes editor-local artifacts before this function ever sees
+ * the result, so there is nothing left here to reject. ADR 0022.
  *
- * The relativize idiom is `path.relative(rootDir, p).replace(/\\/g, "/")` —
- * the `g` flag is load-bearing on Windows: without it only the first
- * backslash converts, and the failure is silent (wrong domain assignments,
- * no exception). See issue #37.
+ * This is now a three-line function, and a reasonable question is whether it
+ * should just be inlined at each call site. Three reasons it stays:
  *
- * No `fs.existsSync` guard: c3source's `findInSection` (the shared helper
- * behind every `C3Project.findAll*` method) already returns `[]` for an
- * absent section directory, so an absent `eventSheets/`/`layouts/`/
- * `objectTypes/`/`families/` yields an empty result here rather than
- * throwing.
- *
- * Every dropped file is logged by relative path — the mitigation for the
- * accepted cost of `isSectionSourceName` silently discarding a genuinely
- * misfiled asset.
+ * 1. It is the **single enumeration** for all four sections (ADR 0017,
+ *    ADR 0020). Inlining would give each of the eight call sites its own
+ *    copy of the walk, re-opening the per-section divergences those ADRs
+ *    exist to close.
+ * 2. It owns the relativize idiom, `path.relative(rootDir, p).replace(/\\/g, "/")`
+ *    — the `g` flag is load-bearing on Windows: without it only the first
+ *    backslash converts, and the failure is silent (wrong domain
+ *    assignments, no exception). See issue #37. Inlining would duplicate
+ *    that idiom, and its easy-to-drop flag, across eight sites instead of
+ *    one.
+ * 3. It deliberately carries no directory-existence check: c3source's
+ *    `findInSection` (the shared helper behind every `C3Project.findAll*`
+ *    method) already returns `[]` for an absent section directory, so an
+ *    absent `eventSheets/`/`layouts/`/`objectTypes/`/`families/` yields an
+ *    empty result here rather than throwing. Adding one back would be
+ *    redundant, not defensive — an easy "helpful" regression to reintroduce
+ *    if this function is inlined and re-derived from scratch.
  */
 export function collectSectionFiles(
   project: C3Project,
   fileType: SectionFileType,
   rootDir: string,
-  log: Logger = () => {},
 ): string[] {
   const absolutePaths = SECTION_COLLECTORS[fileType](project);
-  const kept: string[] = [];
-
-  for (const absolutePath of absolutePaths) {
-    const relPath = path.relative(rootDir, absolutePath).replace(/\\/g, "/");
-    if (isSectionSourceName(path.basename(relPath))) {
-      kept.push(relPath);
-    } else {
-      log(`  Dropped non-section-source file: ${relPath}`);
-    }
-  }
-
-  return kept;
+  return absolutePaths.map((absolutePath) =>
+    path.relative(rootDir, absolutePath).replace(/\\/g, "/"),
+  );
 }

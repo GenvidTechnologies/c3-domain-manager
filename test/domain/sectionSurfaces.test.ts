@@ -1,29 +1,11 @@
 import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import { openProject } from "@genvidtech/c3source";
-import { isSectionSourceName, collectSectionFiles } from "../../src/domain/classification.js";
+import { collectSectionFiles } from "../../src/domain/classification.js";
 import { listUncategorized } from "../../src/domain/domainAnalysis.js";
 import { computeDomainData } from "../../src/domain/domainGenerator.js";
 import { createFile, makeTempDir, removeTempDir } from "../syntheticProject.js";
 import { makeConfig } from "../domainModel.js";
-
-describe("isSectionSourceName", () => {
-  it("admits .json files", () => {
-    assert.isTrue(isSectionSourceName("a.json"));
-  });
-
-  it("rejects .ts files", () => {
-    assert.isFalse(isSectionSourceName("a.ts"));
-  });
-
-  it("rejects .md files", () => {
-    assert.isFalse(isSectionSourceName("README.md"));
-  });
-
-  it("rejects extensionless names", () => {
-    assert.isFalse(isSectionSourceName("README"));
-  });
-});
 
 describe("collectSectionFiles", () => {
   let tmpDir: string;
@@ -45,41 +27,38 @@ describe("collectSectionFiles", () => {
     assert.deepEqual(result, ["eventSheets/Login/Main.json"]);
   });
 
-  it("drops a non-.json file under objectTypes/ via c3source's own collector, never reaching isSectionSourceName", () => {
+  it("drops a non-.json file under objectTypes/ via c3source's own collector", () => {
     createFile(tmpDir, "objectTypes/notes.txt", "hello");
-    const logMessages: string[] = [];
+    createFile(tmpDir, "objectTypes/Real.json", "{}");
     const project = openProject(tmpDir);
 
-    const result = collectSectionFiles(project, "objectType", tmpDir, (msg) => logMessages.push(String(msg)));
+    const result = collectSectionFiles(project, "objectType", tmpDir);
 
-    assert.deepEqual(result, []);
-    // Silence is the assertion. Until c3source 2.0.0 this file reached
-    // isSectionSourceName and was dropped *here*, logging its relative path.
-    // 2.0.0 narrowed find_all_objectTypes_path (and find_all_layouts_path) to
-    // .json, so it is now filtered upstream and never arrives — same output,
-    // different layer. The local filter and its log line are deliberately kept
-    // (see classification.ts); this test no longer proves they fire, because
-    // for this section they cannot. Whether SECTION_SOURCE_EXTENSIONS is still
-    // warranted now that all four section finders filter to .json upstream is
-    // tracked separately — see ADR 0020 and the follow-up issue it links.
-    assert.deepEqual(logMessages, []);
+    // Real.json is the positive control: an explicit kept-list identity,
+    // not bare emptiness, so this test can't pass just as well if the
+    // collector silently dropped everything. c3source 2.0.0 narrowed
+    // find_all_objectTypes_path (and find_all_layouts_path) to .json,
+    // joining eventSheets and families, so notes.txt never reaches
+    // collectSectionFiles at all — the drop happens entirely inside
+    // c3source's collector.
+    assert.deepEqual(result, ["objectTypes/Real.json"]);
   });
 
-  it("drops an editor-local .uistate.json file via c3source's own collector, never reaching isSectionSourceName", () => {
+  it("drops an editor-local .uistate.json file via c3source's own collector", () => {
     createFile(tmpDir, "eventSheets/Main.uistate.json", "{}");
-    const logMessages: string[] = [];
+    createFile(tmpDir, "eventSheets/Main.json", "{}");
     const project = openProject(tmpDir);
 
-    const result = collectSectionFiles(project, "eventSheet", tmpDir, (msg) => logMessages.push(String(msg)));
+    const result = collectSectionFiles(project, "eventSheet", tmpDir);
 
-    // Main.uistate.json ends in ".json", so isSectionSourceName alone would
-    // ADMIT it (see ADR 0020's ordering hazard). Its absence here therefore
-    // proves c3source's findAllEventSheets dropped it first. The empty log
-    // confirms the same thing from the other side: our own filter only ever
-    // logs a file it drops (see the previous test), and it logs nothing for
-    // this one — it never got a chance to make that call.
-    assert.deepEqual(result, []);
-    assert.deepEqual(logMessages, []);
+    // Main.uistate.json ends in ".json", so an extension-only rule would
+    // ADMIT it back in (the ordering hazard ADR 0020/ADR 0022 describe).
+    // Its absence from the explicit kept-list here proves c3source's
+    // findAllEventSheets applies isEditorLocalPath before this function
+    // ever sees the result. Main.json is the positive control, proving the
+    // collector kept the real sheet rather than dropping the whole
+    // directory.
+    assert.deepEqual(result, ["eventSheets/Main.json"]);
   });
 });
 

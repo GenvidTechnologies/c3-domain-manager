@@ -189,6 +189,66 @@ describe("domainAnalysis", () => {
       }
     });
 
+    it("T3 — case-sensitivity: .JSON is not admitted, lowercase .json is (positive control)", () => {
+      createFile(tmpDir, "layouts/Main/Data.JSON");
+      createFile(tmpDir, "layouts/Main/Data.json");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "layouts/Main/Data.JSON": "Auth",
+            "layouts/Main/Data.json": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const keys = result.map((r) => r.key);
+      // Both assertions in one run: the uppercase extension is rejected today
+      // (pins the admission rule's case-sensitivity — a future upstream
+      // widening to accept .JSON would surface here as a failing test rather
+      // than a silent output change), and the lowercase sibling is the
+      // positive control proving the rule is about case, not about this file
+      // wholesale.
+      const uppercase = result.find((r) => r.key === "layouts/Main/Data.JSON");
+      assert.isDefined(uppercase);
+      assert.include(uppercase!.reason, "has no .json extension");
+      assert.notInclude(keys, "layouts/Main/Data.json");
+    });
+
+    it("T4 — ORDER guard: an editor-local uistate override is reported for its artifact reason, not the extension reason", () => {
+      createFile(tmpDir, "eventSheets/Orphan/OrphanEvents.uistate.json");
+      createFile(tmpDir, "eventSheets/Orphan/stray.txt");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "eventSheets/Orphan/OrphanEvents.uistate.json": "Auth",
+            "eventSheets/Orphan/stray.txt": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      // OrphanEvents.uistate.json ends in ".json" -- if the extension check
+      // (class 3) ran before the editor-local check (class 1), this key
+      // would be silently admitted and vanish from the report entirely,
+      // rather than being reported for the artifact reason. This pins the
+      // ORDER, not just that the key is reported at all.
+      const uistate = result.find((r) => r.key === "eventSheets/Orphan/OrphanEvents.uistate.json");
+      assert.isDefined(uistate);
+      assert.include(uistate!.reason, "C3-editor-local artifact");
+
+      // Positive control -- without it, this test would pass just as well if
+      // every override under eventSheets/Orphan were reported regardless of
+      // reason.
+      const stray = result.find((r) => r.key === "eventSheets/Orphan/stray.txt");
+      assert.isDefined(stray);
+      assert.include(stray!.reason, "has no .json extension");
+    });
+
     it("AC6 — reports a trailing-slash key naming a real directory", () => {
       createFile(tmpDir, "scripts/other/foo.ts");
 
@@ -534,40 +594,6 @@ describe("domainAnalysis", () => {
       ]);
     });
 
-    it("guards the section-source filter ORDER, not just uistate exclusion: isSectionSourceName alone would re-admit a .uistate.json", () => {
-      // layouts/ is deliberately unclaimed (no layoutDirs on Auth), so both
-      // files fall straight through to the uncategorized/unclassified walk
-      // instead of being resolved by a domain dir or an override.
-      createFile(tmpDir, "layouts/Main.uistate.json");
-      createFile(tmpDir, "layouts/Main.json");
-
-      const config = makeConfig({
-        Auth: { description: "Auth" },
-      });
-
-      // Main.uistate.json ends in ".json" -- isSectionSourceName, taken on
-      // its own, would happily admit it. Its absence below is proof that
-      // c3source's editor-local exclusion (applied inside the C3Project walk
-      // collectSectionFiles reads from) ran BEFORE isSectionSourceName's
-      // extension check, not that the extension check is somehow stricter
-      // than it looks. This is deliberately not a duplicate of the "we don't
-      // report uistate files" tests elsewhere in this suite -- what's unique
-      // here is pinning the ORDER of the two filters. A future refactor that
-      // "simplifies the two walks into one" by running isSectionSourceName as
-      // a standalone predicate -- instead of downstream of a collector that
-      // already applied isEditorLocalPath -- would silently re-admit this
-      // file, and nothing else in the suite would notice.
-      const uncategorized = listUncategorized(tmpDir, config);
-      assert.notInclude(uncategorized, "layouts/Main.uistate.json");
-
-      const { unclassified } = computeDomainData(tmpDir, config);
-      assert.notInclude(unclassified, "layouts/Main.uistate.json");
-
-      // Positive control -- without it, this test would pass just as well if
-      // the entire layouts/ walk silently returned nothing on both surfaces.
-      assert.include(uncategorized, "layouts/Main.json");
-      assert.include(unclassified, "layouts/Main.json");
-    });
   });
 });
 

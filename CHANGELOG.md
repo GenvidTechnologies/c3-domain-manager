@@ -13,6 +13,10 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
   `SCRIPT_SOURCE_EXTENSIONS`, retiring the local compiled-sibling detection
   they supersede (#48). A decision record (ADR 0021) documents why a separate
   compiled-output drift diagnostic was declined.
+- Adopt `@genvidtech/c3source` 2.0.0's `isSectionItemName`, retiring the local
+  section-extension predicate it supersedes (#60). A decision record
+  (ADR 0022) documents the provenance split between upstream's platform fact
+  and this repo's own parse-boundary policy.
 - Flag inert override keys in `list-stale-overrides` (#36/#55).
 - Detect inert directory-shaped override keys (#54/#56).
 - `.js` script support via the authored-script rule (#39/#50).
@@ -37,6 +41,13 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
   (`src/index.ts`'s re-export of `classification.ts`). No deprecated alias
   is provided — a clean removal, chosen deliberately. Requires a minor
   version bump at the next release (#48).
+- **BREAKING:** `SECTION_SOURCE_EXTENSIONS` and `isSectionSourceName` removed
+  from the public API (`src/index.ts`'s re-export of `classification.ts`),
+  and `collectSectionFiles`'s optional `log` parameter dropped. c3source
+  2.0.0 unified all four non-script section finders to filter to `.json`
+  upstream, making the local filter unreachable; no deprecated alias is
+  provided. Rides the minor bump the `isCompiledSibling` removal above
+  already requires (#60).
 
 ## [0.7.0] - 2026-07-23
 

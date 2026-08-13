@@ -227,8 +227,8 @@ export function computeDomainData(
 ): ComputeDomainDataResult {
   // Find all files
   const project = openProject(rootDir);
-  const eventSheetPaths = collectSectionFiles(project, "eventSheet", rootDir, log);
-  const layoutPaths = collectSectionFiles(project, "layout", rootDir, log);
+  const eventSheetPaths = collectSectionFiles(project, "eventSheet", rootDir);
+  const layoutPaths = collectSectionFiles(project, "layout", rootDir);
   const scriptEntries = findScriptEntries(project.scriptsDir, config, log);
 
   log(
@@ -351,7 +351,7 @@ export function computeDomainData(
   }
 
   // Classify and attribute object types
-  const objectTypePaths = collectSectionFiles(project, "objectType", rootDir, log);
+  const objectTypePaths = collectSectionFiles(project, "objectType", rootDir);
   for (const relPath of objectTypePaths) {
     const domain = classifyFile(relPath, "objectType", config);
 
@@ -371,7 +371,7 @@ export function computeDomainData(
   }
 
   // Classify and attribute families
-  const familyPaths = collectSectionFiles(project, "family", rootDir, log);
+  const familyPaths = collectSectionFiles(project, "family", rootDir);
   for (const relPath of familyPaths) {
     const domain = classifyFile(relPath, "family", config);
 
