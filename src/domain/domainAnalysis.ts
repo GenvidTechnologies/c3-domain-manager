@@ -1,12 +1,16 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { openProject, isEditorLocalPath, isGeneratedScriptOutput } from "@genvidtech/c3source";
+import {
+  openProject,
+  isEditorLocalPath,
+  isGeneratedScriptOutput,
+  isSectionItemName,
+} from "@genvidtech/c3source";
 import {
   classifyFile,
   VALID_PREFIXES,
   FILE_TYPES,
   isScriptSourceName,
-  isSectionSourceName,
   isReportableScriptDir,
   collectSectionFiles,
 } from "./classification.js";
@@ -18,10 +22,12 @@ import type { DomainConfig } from "./types.js";
  * paths classifyFile() returns null for (sorted).
  *
  * The four non-script sections are all enumerated through the one shared
- * `collectSectionFiles` seam (classification.ts), which admits only section
- * *source* (`.json`) — `list-uncategorized` is the worklist for the domain
- * index, and a file the index can't parse has no index representation to
- * gain by being reported here (ADR 0020). scripts/ is not: it delegates to
+ * `collectSectionFiles` seam (classification.ts), whose `C3Project.findAll*`
+ * collectors admit only section *source* (`.json`, upstream's AUDITED
+ * `isSectionItemName`, c3source 2.0.0) — `list-uncategorized` is the
+ * worklist for the domain index, and a file the index can't parse has no
+ * index representation to gain by being reported here (ADR 0020, ADR 0022).
+ * scripts/ is not: it delegates to
  * findScriptEntries, the same enumeration computeDomainData builds
  * DomainData from, so this command reports exactly what the generated index
  * would leave unclassified (ADR 0017). That means a scripts/ result may be a
@@ -111,7 +117,8 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  *   3. Non-source extension (all five sections): the basename fails the
  *      section's admission rule — `scripts/` admits authored script source
  *      (`.ts`/`.js`, ADR 0016); the other four admit section source
- *      (`.json`, ADR 0020), the format `computeDomainData` can parse into
+ *      (`.json`, upstream's AUDITED `isSectionItemName` from c3source,
+ *      ADR 0020, ADR 0022), the format `computeDomainData` can parse into
  *      the domain index.
  *   4. Trailing slash: `classifyFile` normalizes a walk's directory-entry
  *      path before matching overrides, so a key that itself carries the
@@ -234,7 +241,28 @@ export function listInertOverrides(
     // Class 3 — non-source extension, all five sections. A directory-shaped
     // key already `continue`d above in the class-5 branch, so a key that
     // reaches here is guaranteed to name a file.
-    const admits = fileType === "script" ? isScriptSourceName : isSectionSourceName;
+    //
+    // The non-script branch is upstream's isSectionItemName (c3source),
+    // which owns the `.json` name-section item policy as an AUDITED platform
+    // fact. Upstream is explicit that this is one axis of three: its predicate
+    // "[t]ests item-hood only — provenance ... is isEditorLocalPath's job."
+    //
+    // So the isEditorLocalPath(basename) check above is LOAD-BEARING, and its
+    // removal is the regression to guard against: `Main.uistate.json` ends in
+    // `.json`, so isSectionItemName admits it, this branch stays silent, and
+    // the key would vanish from the report entirely rather than being reported
+    // with the wrong reason. Measured — deleting that check drops the uistate
+    // key from listInertOverrides' output and fails T4 in domainAnalysis.test.ts.
+    //
+    // Note what is NOT claimed: the two checks' relative ORDER does not matter
+    // here, because this branch only ever *reports* a rejected extension — it
+    // never admits-and-exits. Swap them and a `.uistate.json` key still falls
+    // through to the editor-local check and still gets the artifact reason
+    // (verified). The order does bind where the predicate gates a *walk*, which
+    // is the contract ADR 0013 records and upstream composes into
+    // find_all_section_items_path — but that is a
+    // property of the predicate, not of this call site.
+    const admits = fileType === "script" ? isScriptSourceName : isSectionItemName;
     if (!admits(basename)) {
       results.push({
         key,
