@@ -164,13 +164,16 @@ construction:
 The same derivative logic applies uniformly to all four non-script sections, not
 just to the `scripts/` case above: `eventSheets/`, `layouts/`, `objectTypes/`, and
 `families/` are all authored as `.json`, and every one of the four is walked
-through the shared `collectSectionFiles` collector, which admits only `.json` and
-drops everything else before either surface ever sees it. So a stray non-`.json`
+through the shared `collectSectionFiles` collector. `collectSectionFiles` itself
+applies no filter — the `.json`-only admission happens one layer earlier, inside
+each `C3Project.findAll*` collector it wraps, via c3source's own audited
+name-section item predicate. So a stray non-`.json`
 file sitting in one of those four directories — an `eventSheets/` `.md`, an
 `objectTypes/` `.png` — is reported by
 neither surface, for the same reason as the non-script case above: the index has
 no representation for a file it cannot parse, so there is nothing an `overrides`
-entry could usefully change. See `docs/decisions/0020-section-source-extension-filter.md`.
+entry could usefully change. See `docs/decisions/0020-section-source-extension-filter.md`
+and `docs/decisions/0022-section-extension-provenance.md`.
 
 **Editor-local artifacts are excluded from the walk, not just left unclassified.** `list-uncategorized` never presents these as unmapped work in the first place, via `@genvidtech/c3source`'s `isEditorLocalPath`:
 
