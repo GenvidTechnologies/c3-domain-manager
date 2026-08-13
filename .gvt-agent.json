@@ -8,7 +8,7 @@
     "test": "npm test",
     "lint": "npm run lint",
     "build": "npm run build",
-    "validate": "npm run lint && npm run typecheck && npm test"
+    "validate": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "repo": {
     "host": "github",
