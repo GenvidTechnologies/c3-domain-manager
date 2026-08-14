@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
-import { openProject } from "@genvidtech/c3source";
+import { openProject, type C3Project } from "@genvidtech/c3source";
 import { collectSectionFiles } from "../../src/domain/classification.js";
 import { listUncategorized } from "../../src/domain/domainAnalysis.js";
 import { computeDomainData } from "../../src/domain/domainGenerator.js";
@@ -59,6 +59,27 @@ describe("collectSectionFiles", () => {
     // collector kept the real sheet rather than dropping the whole
     // directory.
     assert.deepEqual(result, ["eventSheets/Main.json"]);
+  });
+
+  it("converts every backslash in a native-separator path, not just the first", () => {
+    // This test looks artificial on purpose — do not "simplify" it into a
+    // real filesystem walk. c3source returns absolute native-separator
+    // paths; on POSIX a real walk never produces a backslash, so
+    // `.replace(/\\/g, "/")` is a no-op there, and CI is `ubuntu-latest`
+    // only (no OS matrix — .github/workflows/ci.yml). The only way CI can
+    // observe the `g` flag at all is to feed collectSectionFiles' input
+    // directly, bypassing the filesystem, which is why this fake stubs
+    // `findAllEventSheets` instead of using `makeTempDir`/`createFile` like
+    // the sibling tests above (T7: no filesystem, no process.platform
+    // branch). Two backslashes in the fixture path is the point: with the
+    // `g` flag dropped, only the first would convert.
+    const fake = {
+      findAllEventSheets: () => ["/root/eventSheets\\Login\\Main.json"],
+    } as unknown as C3Project;
+
+    assert.deepEqual(collectSectionFiles(fake, "eventSheet", "/root"), [
+      "eventSheets/Login/Main.json",
+    ]);
   });
 });
 
