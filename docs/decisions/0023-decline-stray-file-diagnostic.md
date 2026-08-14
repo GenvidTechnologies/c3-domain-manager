@@ -53,13 +53,17 @@ free function and a `C3Project` method. Read from the packed
   `uistate/` contents, `tsconfig.json` and `ts-defs/*.d.ts` are all absent
   from the output.
 - **It owns its own `existsSync`** — a missing section directory is skipped,
-  not reported, and never throws.
+  not reported, and does not throw. It is not blanket-safe, though: upstream
+  documents that a filesystem failure inside `find_all_files_path` *will*
+  propagate, and forbids wrapping the call in a `try`/`catch` that would hide
+  it.
 - Scope is `C3_SECTION_FOLDERS`, **seven** sections: `layouts`, `eventSheets`,
   `objectTypes`, `timelines`, `flowcharts`, `families`, `models3d`.
   `scripts/` is explicitly out of scope in upstream's own doc comment.
-- Upstream describes it as *"the exact complement of
-  `find_all_section_items_path` over the same walk: disjoint, and their union
-  is every non-editor-local file in that directory."*
+- Upstream describes it as *"The exact complement of
+  `find_all_section_items_path` over the same walk: … the two functions'
+  results are disjoint and their union is every non-editor-local file in that
+  directory."*
 
 ### What is silent here today
 
@@ -118,8 +122,8 @@ projects already declined in [[0021-decline-drift-diagnostic]]), and **1**
 **Canonical fixture** — preferred over corpus figures wherever either would
 do, because it is reproducible from the pinned `construct3-sample` `v1.0.0`
 submodule tag: `timelines/` holds **4** items *counted recursively* (a
-top-level listing shows only 3 entries — `Mixing/` and `transitions/Others/`
-hold the rest), `flowcharts/` holds **1**, `models3d/` is absent,
+top-level listing shows only 3 entries; the fourth sits a level deeper, under
+`transitions/Others/`), `flowcharts/` holds **1**, `models3d/` is absent,
 `tilemapBrushes/objectTypes/tiles/Tilemap.brush.json` is present, and there
 are **0** strays.
 
@@ -135,10 +139,14 @@ The four sections this tool models. Strays here are invisible, and
 category:**
 
 - *Frequency*: n = 0 across 17 projects and the fixture.
-- *Category*: a stray is **unmappable by construction**. Upstream's own
-  reasoning is the same one [[0020-section-source-extension-filter]] reached
-  locally — a name section keys its items on `<name>.json`, so a stray has no
-  position to acquire. The operator's response to a reported stray is
+- *Category*: a stray is **unmappable by construction**. Upstream reaches
+  that by manifest position — a name section keys its items on
+  `<name>.json`, so a stray has none to acquire.
+  [[0020-section-source-extension-filter]] reached the same conclusion by a
+  different route: nothing downstream can represent the file, so no
+  `overrides` entry could usefully change anything. Two arguments, one
+  answer — do not read either as the other's.
+  The operator's response to a reported stray is
   `git rm` or "move it somewhere else", never a `domain-config.json` edit.
   That puts it outside the definition [[0017-script-surface-unification]]
   gave `list-uncategorized` — a path is reportable exactly when assigning it
@@ -168,7 +176,7 @@ Out of scope for the primitive: upstream scopes `scripts/` out in
 `detectStrayFiles`' own doc comment, deliberately and in the same release,
 because file-folder membership there is extension-agnostic — there is no
 item-hood rule for a stray to violate. The local boundary is already recorded
-by [[0021-decline-drift-diagnostic]] (`:100-103`), which noted exactly this
+by [[0021-decline-drift-diagnostic]] (`:101-103`), which noted exactly this
 upstream scoping. The residual measured above (9 `tsconfig.json`, 5 compiled
 siblings, 1 `.gitkeep`) is already dispositioned by
 [[0013-editor-local-exclusion-list-uncategorized]] and
@@ -189,6 +197,18 @@ c3source intends to model (its contents are `.json`, nested under an
 deliberately outside `C3_SECTION_FOLDERS`? Filing that upstream is optional
 and is **not** part of this work; a `tilemapBrushes` answer changes nothing
 here while buckets A and B stand declined.
+
+**Why `tilemapBrushes/` alone gets a bucket, and the fixture's other root
+directories do not.** The canonical fixture also holds `addons/`, `icons/`
+and `images/`, which likewise appear in neither enumeration — but unlike
+`tilemapBrushes/`, upstream has already *explained* their absence rather than
+merely omitted them: `rootFileFolders` categories are out of scope because
+*"file-folder membership is extension-agnostic by design — there is no
+item-hood rule for a stray to violate there"* (the same reason as bucket C),
+and `images/` because it is *"a flat asset folder, not a name section, at
+all."* An explained absence is not a gap. `tilemapBrushes/` is the only one
+upstream's doc comment does not account for, which is precisely what makes it
+worth recording.
 
 ## Compromise
 
@@ -221,9 +241,11 @@ today's, and it is accepted here rather than argued away.
 some point" and [[0022-section-extension-provenance]]'s "the primitive a
 future #62-shaped issue should evaluate" are answered: evaluated, declined.
 Neither record is edited — an accepted ADR records the state faced at its
-date, not the state as later revised, the precedent
-[[0021-decline-drift-diagnostic]] (`:138-143`) set when it left ADR 0016
-untouched. Resolution lives here, in `docs/TOC.md`, and in the two pointers
+date, not the state as later revised. That precedent was set by
+[[0016-authored-script-js-support]] for itself and applied by
+[[0021-decline-drift-diagnostic]] (`:138-143`), which left ADR 0016
+untouched on exactly this reasoning. Resolution lives here, in
+`docs/TOC.md`, and in the two pointers
 this record's issue wired into `CLAUDE.md` and `docs/domain-architecture.md`.
 
 ## Consequences
