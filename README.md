@@ -204,7 +204,7 @@ Key exports from `src/index.ts`:
 | `validateBoundaries(domains, config, filter?)` | `relationships` | Check declared vs observed dependencies |
 | `computeHealth(domain)` | `health` | Ca, Ce, instability for one `DomainData` |
 | `generateContextMap(domains, config, opts)` | `contextMap` | Produce text or Mermaid context map |
-| `validateEditorStrictness(root, config, log?)` | `editorValidation` | Re-walk event sheets and return issues grouped by sheet |
+| `validateEditorStrictness(root, config, log?)` | `editorValidation` | Walk event sheets and return issues grouped by sheet |
 | `formatEditorStrictnessReport(report)` | `editorValidation` | Render an `EditorStrictnessReport` to text |
 
 Type definitions are in `src/domain/types.ts`: `DomainConfig`, `DomainDefinition`, `SharedSubdomainDefinition`, `DomainData`, `Relationship`, `FunctionDef`. Editor-validation types (`EditorStrictnessReport`, `EditorStrictnessSheetReport`) are in `src/domain/editorValidation.ts`.
