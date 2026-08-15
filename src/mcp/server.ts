@@ -31,13 +31,17 @@ import type { ComputeDomainDataResult } from "../domain/domainGenerator.js";
 import { resolveLocations } from "../adapters/locations.js";
 import type { ResolvedLocations } from "../adapters/locations.js";
 
-let PROJECT_ROOT = process.cwd();
-let EXTRACTED_DIR = path.join(PROJECT_ROOT, "extracted");
-let CONFIG_PATH = path.join(PROJECT_ROOT, "domain-config.json");
-let CONFIG_DIR = path.dirname(CONFIG_PATH);
-let CONFIG_FILENAME = path.basename(CONFIG_PATH);
-let CONFIG_WATCH_KEY = CONFIG_PATH.replace(/\\/g, "/");
-let EXTRACTED_EPHEMERAL = false;
+// Assigned by startServer() from resolveLocations(), before any transport is
+// connected and therefore before any registered tool callback can be dispatched.
+// The explicit annotations are load-bearing: with no initializer there is nothing
+// to infer from, so omitting them yields `any` and trips --max-warnings 0.
+let PROJECT_ROOT: string;
+let EXTRACTED_DIR: string;
+let CONFIG_PATH: string;
+let CONFIG_DIR: string;
+let CONFIG_FILENAME: string;
+let CONFIG_WATCH_KEY: string;
+let EXTRACTED_EPHEMERAL: boolean;
 
 const server = new McpServer(
   { name: "c3-domain-manager", version: "1.0.0" },
