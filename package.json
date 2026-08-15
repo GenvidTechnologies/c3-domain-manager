@@ -55,6 +55,8 @@
 		"test": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts 'test/**/*.test.ts' --exit",
 		"pretest:file": "npm run fixture:prep",
 		"test:file": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts --exit",
+		"pretest:noexit": "npm run fixture:prep",
+		"test:noexit": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts 'test/**/*.test.ts'",
 		"lint": "eslint --ext .ts --max-warnings 0 src/ test/",
 		"typecheck": "tsc -p tsconfig.test.json --noEmit",
 		"corpus:scan": "node scripts/scan-corpus.mjs"
