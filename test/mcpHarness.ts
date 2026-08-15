@@ -33,7 +33,8 @@ export interface HarnessOpts {
   files?: Record<string, string>;
   /**
    * Whether to let the server auto-generate `extracted/domain-index/` on
-   * startup (the real `:624` `existsSync` guard in `server.ts`). Default
+   * startup (`startServer`'s bare `existsSync` guard on the domain-index
+   * directory, in `server.ts`). Default
    * `false`: the harness pre-creates an empty `extracted/domain-index/` so
    * startup skips auto-generation entirely — the largest single time lever
    * (~750ms) for suites that don't need a populated index. Pass `true` when
@@ -82,8 +83,8 @@ export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
 
   const autoGenerate = opts.autoGenerate ?? false;
   if (!autoGenerate) {
-    // Pre-create the domain-index dir so the `:624` existsSync guard in
-    // startServer skips auto-generation on this spawn entirely.
+    // Pre-create the domain-index dir so startServer's bare existsSync guard
+    // skips auto-generation on this spawn entirely.
     fs.mkdirSync(path.join(root, "extracted", "domain-index"), { recursive: true });
   }
 
