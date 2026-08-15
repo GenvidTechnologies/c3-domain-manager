@@ -328,7 +328,7 @@ Each domain can define a `glossary` map of terms to definitions. `glossary-check
 
 ## Editor-strictness validation
 
-`validate-editor` (CLI subcommand or MCP `READ_ONLY` tool "Validate Editor Strictness") checks whether the target project's event sheets are structurally valid from the C3 editor's perspective. It re-walks `eventSheets/` fresh from disk, attributes each sheet to a domain via `classifyFile`, and runs `@genvidtech/c3source`'s `validateForEditor` per sheet. Issues are grouped by sheet; sheets that match no domain classification are reported under `"(unclassified)"`.
+`validate-editor` (CLI subcommand or MCP `READ_ONLY` tool "Validate Editor Strictness") checks whether the target project's event sheets are structurally valid from the C3 editor's perspective. It enumerates `eventSheets/` fresh from disk through `collectSectionFiles`, attributes each sheet to a domain via `classifyFile`, and runs `@genvidtech/c3source`'s `validateForEditor` per sheet. Issues are grouped by sheet; sheets that match no domain classification are reported under `"(unclassified)"`.
 
 This is a read-side diagnostic only. `c3-domain-manager` never writes or modifies event sheets — the report surfaces sheets the C3 editor would refuse to import (e.g. a `variable` event missing its `comment` field, or a `group` event missing its `description`) so you can fix them in the C3 editor.
 

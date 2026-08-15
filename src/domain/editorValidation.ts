@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { openProject, validateForEditor } from "@genvidtech/c3source";
 import type { EventSheet, EditorValidationIssue } from "@genvidtech/c3source";
 import type { Logger } from "@genvidtech/mcp-utils";
-import { classifyFile } from "./classification.js";
+import { classifyFile, collectSectionFiles } from "./classification.js";
 import type { DomainConfig } from "./types.js";
 
 export interface EditorStrictnessSheetReport {
@@ -27,19 +27,30 @@ export function validateEditorStrictness(
   log: Logger = () => {},
 ): EditorStrictnessReport {
   const project = openProject(rootDir);
+  // This guard's return value is now redundant for correctness:
+  // collectSectionFiles goes through C3Project.findAllEventSheets, whose
+  // shared findInSection already returns [] for an absent eventSheets/ dir,
+  // so an absent section would yield the same empty report without it.
+  // It survives for its log line — the skip signal ADR 0008 deliberately
+  // preserves — pinned by editorValidation.test.ts. Do NOT add an
+  // fs.existsSync guard here or anywhere else in this function: that would
+  // be redundant, not defensive (ADR 0020 removed exactly that from
+  // collectSectionFiles; re-deriving it is a known regression trap).
   if (!project.hasEventSheets()) {
     log(`editorValidation: eventSheets/ dir not found at ${project.eventSheetsDir}, skipping.`);
     return { sheets: [], totalIssues: 0 };
   }
-  const sheetPaths = project.findAllEventSheets();
+  // One enumeration per section (ADR 0017/0020/0024): route through the
+  // shared collectSectionFiles seam instead of hand-relativizing this
+  // walk's own copy of project.findAllEventSheets().
+  const relPaths = collectSectionFiles(project, "eventSheet", rootDir);
 
   const results: EditorStrictnessSheetReport[] = [];
 
-  for (const sheetPath of sheetPaths) {
-    const relPath = path.relative(rootDir, sheetPath).replace(/\\/g, "/");
+  for (const relPath of relPaths) {
     const domainName = classifyFile(relPath, "eventSheet", config) ?? "(unclassified)";
 
-    const content = fs.readFileSync(sheetPath, "utf-8");
+    const content = fs.readFileSync(path.join(rootDir, relPath), "utf-8");
     const sheet: EventSheet = JSON.parse(content) as EventSheet;
 
     const issues = validateForEditor(sheet);

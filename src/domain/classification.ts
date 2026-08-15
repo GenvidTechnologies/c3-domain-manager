@@ -237,9 +237,20 @@ export type SectionFileType = keyof typeof SECTION_COLLECTORS;
  * 2. It owns the relativize idiom, `path.relative(rootDir, p).replace(/\\/g, "/")`
  *    — the `g` flag is load-bearing on Windows: without it only the first
  *    backslash converts, and the failure is silent (wrong domain
- *    assignments, no exception). See issue #37. Inlining would duplicate
- *    that idiom, and its easy-to-drop flag, across eight sites instead of
- *    one.
+ *    assignments, no exception). As of issue #37 / ADR 0024 this is the
+ *    **only** copy of that idiom in `src/domain/`: `editorValidation.ts`
+ *    carried the second one until its walk was routed through here.
+ *    Inlining would duplicate it, and its easy-to-drop flag, across eight
+ *    sites instead of one.
+ *
+ *    CI runs on `ubuntu-latest` only, where `path.relative` never emits a
+ *    backslash and the `.replace` is therefore a no-op — so no test driven
+ *    by a real filesystem walk can observe the flag at all. It is pinned
+ *    instead by a contract test in `test/domain/sectionSurfaces.test.ts`
+ *    that feeds this function a synthesised native-separator collector
+ *    result. That test looks artificial on purpose; it is the only coverage
+ *    CI can see, and simplifying it into a real walk would silently retire
+ *    the guarantee.
  * 3. It deliberately carries no directory-existence check: c3source's
  *    `findInSection` (the shared helper behind every `C3Project.findAll*`
  *    method) already returns `[]` for an absent section directory, so an
