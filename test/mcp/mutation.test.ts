@@ -128,20 +128,25 @@ describe("mcp server — mutation trajectory", function () {
     });
   });
 
-  describe("K3: #68 double-bump observation-gated bug signature", function () {
-    // KNOWN-BROKEN — see #68. A single self-write through set-overrides
-    // fires >1 fs.watch event on Windows (measured 4/4 runs), so the
-    // watcher's external-change branch misfires once per write, over-bumping
-    // txId. Measured NOT to reproduce on Linux ext4 (WSL, node 20/22) — see
-    // SELF_WRITE_OBSERVED_TXID_BUMPS in mcpHarness.ts, which is the single
-    // constant this test (and #68 itself, once fixed) is keyed on.
+  describe("K3: #68 one self-write, one txId bump", function () {
+    // #68 is FIXED — this asserts the correct trajectory UNCONDITIONALLY.
     //
-    // This test must pass on BOTH platforms: it awaits the spurious
-    // "External change detected" warning on a short deadline, and only
-    // asserts the broken trajectory if that warning actually arrives. If it
-    // doesn't, the platform didn't double-fire (either genuinely fixed, or
-    // this platform's fs.watch never over-delivers), and the test logs a
-    // note and passes without asserting anything about txId.
+    // It used to be observation-gated: it awaited the spurious "External
+    // change detected" warning and asserted the broken trajectory only if
+    // that warning arrived, logging a note and passing otherwise. That shape
+    // was right while the bug was live and Windows-only, but it is actively
+    // harmful now — a gate that asserts only when the bug appears is
+    // indistinguishable from a gate that never fires because the watcher is
+    // dead, so it would pass just as happily against a server that had
+    // stopped delivering events at all. The whole point of the fix is that
+    // the trajectory is now the same on both platforms, so there is nothing
+    // left to gate on.
+    //
+    // Note the assertions below are deliberately two-sided: the absence of
+    // the spurious warning is checked (the fix), AND the replay is checked to
+    // be ACCEPTED (the contract #68 actually broke). Absence alone would pass
+    // against a dead watcher; the accepted replay plus B2b's external-change
+    // coverage is what rules that out.
     let h: Harness;
 
     before(async function () {
@@ -154,47 +159,43 @@ describe("mcp server — mutation trajectory", function () {
       await h?.stop();
     });
 
-    it("a self-write's spurious second watcher bump, if observed, matches SELF_WRITE_OBSERVED_TXID_BUMPS", async function () {
+    it("one self-write advances txId by exactly SELF_WRITE_OBSERVED_TXID_BUMPS, and the handed-back txId stays valid", async function () {
       const setRes = await h.call("set-overrides", {
         overrides: { "eventSheets/alpha/x.json": "Domain0" },
       });
       assertOk(setRes);
       const footerTxId = txIdOf(setRes);
 
-      let fired = true;
+      // No spurious external-change warning for a write the server made
+      // itself. Waiting for the absence costs the full deadline, which is
+      // why it is 1500ms rather than the harness default — long enough that
+      // Windows' second event (measured 0.2-0.9ms after the first) would
+      // certainly have landed.
+      let spurious = true;
       try {
         await h.waitForNote(
           (n) => n.level === "warning" && /External change detected/.test(String(n.data)),
           1500,
         );
       } catch {
-        fired = false;
+        spurious = false;
       }
+      assert.isFalse(spurious, "a self-write must not be reported as an external change");
 
-      if (!fired) {
-        // console.warn, not .log/.debug: test/setup.ts silences the latter two.
-        console.warn("K3: platform did not double-fire; skipping broken-trajectory assertions (see #68)");
-        return;
-      }
-
-      // Broken trajectory: the synchronous write bumps txId to exactly 1 —
-      // one less than the full observed count, since the footer is read
-      // before the watcher's spurious extra bump(s) land.
-      assert.strictEqual(footerTxId, SELF_WRITE_OBSERVED_TXID_BUMPS - 1);
-
+      // The footer the client was handed is the server's current txId — not
+      // one behind it, which is what the double-bump used to produce.
       const stateRes = await h.call("get-state", {});
-      const stateText = assertOk(stateRes);
-      assert.strictEqual(stateTxId(stateText), SELF_WRITE_OBSERVED_TXID_BUMPS);
+      assert.strictEqual(stateTxId(assertOk(stateRes)), footerTxId);
+      assert.strictEqual(footerTxId, SELF_WRITE_OBSERVED_TXID_BUMPS);
 
-      // The client's handed-back txId is now stale on the server (the
-      // watcher already bumped past it) — passing it back is rejected. This
-      // is the double-bump's observable consequence for a caller doing
-      // optimistic concurrency correctly.
-      const rejectRes = await h.call("set-overrides", {
+      // The contract #68 actually broke: a client that takes the txId a
+      // mutate tool handed back and passes it on its next write must be
+      // ACCEPTED. This previously failed on every write.
+      const acceptRes = await h.call("set-overrides", {
         overrides: { "eventSheets/beta/y.json": "Domain0" },
         txId: footerTxId,
       });
-      assertToolError(rejectRes, `State changed: expected txId ${footerTxId}`);
+      assertOk(acceptRes);
     });
   });
 });
