@@ -13,6 +13,10 @@ Each entry should be a one-line description.
 
 - `releasing.md` — how to cut a new release (version bump, tag convention, OIDC publish via `publish.yml`)
 
+## Knowledge Base
+
+- `wiki-schema.md` — maintenance schema for the three-tier LLM-wiki (`raw/` captures → `wiki/` pages → this schema): page format, create-vs-update lifecycle, `raw/` immutability, and the staleness policy
+
 ## Process
 
 - `issue-triage.md` — issue-triage conventions (flat GitHub label set): categories, required fields, duplicate/dependency policy, and the `gh` mutation recipes
