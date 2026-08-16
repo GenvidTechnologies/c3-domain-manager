@@ -14,7 +14,7 @@ import { startHarness, assertOk } from "../mcpHarness.js";
  * NOT via EISDIR (replacing the file with a directory), despite that being
  * the route named in the plan. Verified end-to-end and it does not reach
  * writeDomainConfig() at all: deleting/replacing domain-config.json fires
- * the config-path fs.watch handler (server.ts:602-610), which nulls
+ * the config-path watcher's onExternalChange handler in server.ts, which nulls
  * domainConfigCache — same as any other external change to that path — so
  * set-overrides's own loadDomainConfig() call re-reads from disk, finds a
  * directory where a file should be, and returns the loadProjectConfig error
