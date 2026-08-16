@@ -8,6 +8,18 @@ on:
 jobs:
   gate:
     uses: GenvidTechnologies/public-github-actions/.github/workflows/node-gate.yml@main
+    with:
+      # MUST match ci.yml's gate inputs. Recursive checkout inits the
+      # construct3-sample submodule, which the `pretest` hook materializes into
+      # the canonical test fixture. The shared gate checks out no submodules by
+      # default, so without this the fixture is absent and `pretest` aborts
+      # before a single test runs (#34).
+      #
+      # ci.yml got this in #41; publish.yml did not, and the gap stayed latent
+      # until the v0.8.0 tag push — the first release cut after the submodule
+      # existed, so it is also the first time this gate had a fixture to miss.
+      # If you add an input to ci.yml's gate, add it here too.
+      submodules: recursive
 
   publish:
     needs: gate
