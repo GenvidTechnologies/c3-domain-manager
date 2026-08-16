@@ -8,6 +8,23 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-16
+
+### Fixed
+- A single MCP self-write no longer double-bumps `txId`, so a client that
+  replays the `txId` a mutate tool handed it is accepted rather than rejected
+  on every write (#68/#71). External writes are fixed on the same path. Windows
+  delivers two `fs.watch` events per `writeFileSync` while
+  `ExpectedChanges.consume` was single-shot; the fix is upstream, in
+  `@genvidtech/mcp-utils` 0.7.0's `OptimisticWatcher` Layer 3, adopted here.
+  ADR 0026 records the platform measurement that closed ADR 0025's open
+  node-version confound.
+- The config-path `fs.watch` handle no longer keeps the server alive after its
+  stdin closes, which previously orphaned a server process holding the project
+  directory (#70/#71). Note `stop()` is *not* what fixes it — `shutdown()` is
+  wired only to `SIGINT`/`SIGTERM`, so a stdin-close disconnect never reaches
+  it; the handle is `unref`'d instead.
+
 ### Added
 - Adopt `@genvidtech/c3source` 2.0.0's `isGeneratedScriptOutput` and
   `SCRIPT_SOURCE_EXTENSIONS`, retiring the local compiled-sibling detection
@@ -24,9 +41,21 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
   coverage (#41).
 - Add issue-triage conventions; add Commit Format / Pull Request Format /
   Branching sections to `CLAUDE.md` (#42/#44).
+- A subprocess-based MCP stdio test harness (`test/mcpHarness.ts`) driving the
+  real server over its production CLI path with a real MCP `Client`, covering
+  tool-level error propagation, cache invalidation, optimistic-concurrency
+  rejection and the response shapes (#67/#69, ADR 0025).
 
 ### Changed
 - Bump `@genvidtech/c3source` floor to `^2.0.0` (#48).
+- Bump `@genvidtech/mcp-utils` floor to `^0.7.0` (#68) — load-bearing for
+  `OptimisticWatcher` and `ObservedState`.
+- Route `validateEditorStrictness`'s `eventSheets/` walk through
+  `collectSectionFiles`, leaving one copy of the relative-POSIX idiom in
+  `src/domain/` instead of two (#37/#66, ADR 0024).
+- Delete `server.ts`'s seven dead module-init initializers (#65/#69).
+- Decline a stray-file diagnostic built on c3source 2.0.0's `detectStrayFiles`,
+  with explicit dispositions per section (#62/#64, ADR 0023).
 - Unify the two `scripts/`-enumerating surfaces (#47/#53).
 - Unify the section-source rule across both surfaces (#52/#58).
 - Consolidate duplicated temp-project test helpers (#38/#43).
@@ -36,18 +65,21 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
   suppressed where it was previously emitted (#48).
 - Two `CONVENTIONS.md` resyncs (gvt-dev 4.4.0, 4.5.0).
 
-### Removed
-- **BREAKING:** `isCompiledSibling` removed from the public API
-  (`src/index.ts`'s re-export of `classification.ts`). No deprecated alias
-  is provided — a clean removal, chosen deliberately. Requires a minor
-  version bump at the next release (#48).
-- **BREAKING:** `SECTION_SOURCE_EXTENSIONS` and `isSectionSourceName` removed
-  from the public API (`src/index.ts`'s re-export of `classification.ts`),
-  and `collectSectionFiles`'s optional `log` parameter dropped. c3source
-  2.0.0 unified all four non-script section finders to filter to `.json`
-  upstream, making the local filter unreachable; no deprecated alias is
-  provided. Rides the minor bump the `isCompiledSibling` removal above
-  already requires (#60).
+### Internal (no consumer-visible change)
+- `isCompiledSibling` (#48), and `SECTION_SOURCE_EXTENSIONS` /
+  `isSectionSourceName` (#60), were added and then removed again **entirely
+  within this release cycle**, so no published version ever exported them.
+  Upgrading 0.7.0 → 0.8.0 loses nothing: `0.7.0`'s `classification.d.ts`
+  exported only `FILE_TYPES`, `VALID_PREFIXES` and `classifyFile`, verified
+  against the published tarball. These were previously listed under `Removed`
+  and marked **BREAKING**, which would have sent consumers auditing for
+  removals their copy never had — the entries described churn between
+  releases rather than a delta between them. `collectSectionFiles`'s optional
+  `log` parameter was likewise never published.
+
+  Recorded rather than deleted because the reasoning is still worth having:
+  each removal was a deliberate, alias-free retirement in favour of an
+  upstream c3source 2.0.0 primitive, and ADRs 0021 and 0022 document why.
 
 ## [0.7.0] - 2026-07-23
 
