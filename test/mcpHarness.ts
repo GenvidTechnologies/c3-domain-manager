@@ -230,12 +230,21 @@ export function txIdOf(res: CallToolResult): number {
 }
 
 /**
- * Observed number of txId bumps produced by ONE self-write through
- * set-overrides/remove-overrides. Correct value is 1. It is 2 because
- * fs.writeFileSync fires >1 watcher event for a single write while
- * ExpectedChanges.consume is single-shot, so event 2 is misclassified
- * external. Windows-only — measured 1 event on Linux ext4 (node 20 and 22),
- * 2 on Windows (node 24). KNOWN-BROKEN — see #68. When #68 lands, set this
- * to 1 and every dependent assertion follows.
+ * Number of txId bumps produced by ONE self-write through
+ * set-overrides/remove-overrides. One logical change, one bump — on every
+ * platform.
+ *
+ * This was 2 on Windows until #68 was fixed: fs.writeFileSync delivers two
+ * fs.watch events there for a single write (platform-determined, measured
+ * invariant across three node majors — see ADR 0026), and
+ * ExpectedChanges.consume is single-shot, so the second event was
+ * misclassified as external. mcp-utils 0.7.0's OptimisticWatcher adds a
+ * content-fingerprint Layer 3 that answers "does the file hold something we
+ * haven't accounted for?" — a question with no timing term — which collapses
+ * the duplicate without a window to tune.
+ *
+ * Kept as a named constant rather than an inline 1: it is the single point
+ * every dependent assertion keys on, and it names *why* the number is what
+ * it is. Measured after the fix: 1, on 3/3 runs against the real server.
  */
-export const SELF_WRITE_OBSERVED_TXID_BUMPS = 2;
+export const SELF_WRITE_OBSERVED_TXID_BUMPS = 1;

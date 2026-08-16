@@ -4,7 +4,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
+import { ReadWriteLock, ExpectedChanges, OptimisticWatcher, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
 import type { Logger } from "@genvidtech/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
@@ -53,11 +53,12 @@ exposeDocs(server, __pkgDir);
 
 // ── Server State ─────────────────────────────────────────────────────────────
 
-let txId = 0;
 let domainDirty = false;
-let suppressWatcherDepth = 0;
 const rwlock = new ReadWriteLock();
 const expectedChanges = new ExpectedChanges();
+// Constructed in startServer() once CONFIG_PATH/CONFIG_WATCH_KEY are known;
+// owns txId (see the `watcher.txId` accessor used throughout below).
+let watcher: OptimisticWatcher;
 let domainConfigCache: DomainConfig | null = null;
 let domainDataCache: ComputeDomainDataResult | null = null;
 
@@ -124,19 +125,14 @@ async function getDomainData(): Promise<ComputeDomainDataResult | CallToolResult
 }
 
 function writeDomainConfig(config: DomainConfig): void {
-  suppressWatcherDepth++;
-  try {
-    expectedChanges.add(CONFIG_WATCH_KEY);
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, "\t") + "\n", "utf-8");
-  } finally {
-    suppressWatcherDepth--;
-  }
+  watcher.expect(CONFIG_WATCH_KEY);
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, "\t") + "\n", "utf-8");
   // Caching the mutated object without re-validation is safe: the lenient
   // .passthrough() schema still accepts it, and we own the mutation.
   domainConfigCache = config;
-  txId++;
+  watcher.bump();
   domainDirty = true;
-  emitLog("info", `domain-config.json updated (txId → ${txId})`);
+  emitLog("info", `domain-config.json updated (txId → ${watcher.txId})`);
 }
 
 // onError hook for the mutate tools: a write that throws (e.g. a failed
@@ -144,8 +140,8 @@ function writeDomainConfig(config: DomainConfig): void {
 // changed — and the watcher swallows its own event via expectedChanges — so the
 // client would never learn to reconcile. Bumping txId here forces a re-read.
 function onWriteError(err: unknown): void {
-  txId++;
-  emitLog("error", `domain-config.json write failed (txId → ${txId}): ${err instanceof Error ? err.message : String(err)}`);
+  watcher.bump();
+  emitLog("error", `domain-config.json write failed (txId → ${watcher.txId}): ${err instanceof Error ? err.message : String(err)}`);
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
@@ -296,9 +292,9 @@ server.registerTool(
   },
   async ({ overrides: newOverrides, txId: expectedTxId }) =>
     rwlock.write(withMcpErrors(async () => {
-      if (expectedTxId !== undefined && expectedTxId !== txId) {
+      if (expectedTxId !== undefined && expectedTxId !== watcher.txId) {
         return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${txId}. Re-read state and retry.` }],
+          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${watcher.txId}. Re-read state and retry.` }],
           isError: true,
         };
       }
@@ -329,7 +325,7 @@ server.registerTool(
       const parts: string[] = [];
       if (added.length > 0) parts.push(`Added ${added.length}:\n${added.join("\n")}`);
       if (updated.length > 0) parts.push(`Updated ${updated.length}:\n${updated.join("\n")}`);
-      return mcpContent(parts.join("\n\n"), `txId: ${txId}`);
+      return mcpContent(parts.join("\n\n"), `txId: ${watcher.txId}`);
     }, { onError: onWriteError }))
 );
 
@@ -350,9 +346,9 @@ server.registerTool(
   },
   async ({ paths, txId: expectedTxId }) =>
     rwlock.write(withMcpErrors(async () => {
-      if (expectedTxId !== undefined && expectedTxId !== txId) {
+      if (expectedTxId !== undefined && expectedTxId !== watcher.txId) {
         return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${txId}. Re-read state and retry.` }],
+          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${watcher.txId}. Re-read state and retry.` }],
           isError: true,
         };
       }
@@ -372,7 +368,7 @@ server.registerTool(
         return { content: [{ type: "text", text: "None of the specified paths were in overrides." }] };
       }
       writeDomainConfig(config);
-      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${txId}`);
+      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${watcher.txId}`);
     }, { onError: onWriteError }))
 );
 
@@ -390,12 +386,9 @@ server.registerTool(
       const lines: string[] = [];
       const log: Logger = (...args) => lines.push(args.map(String).join(" "));
       try {
-        suppressWatcherDepth++;
-        try {
+        await watcher.suppress(async () => {
           await generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_DIR, CONFIG_FILENAME, log);
-        } finally {
-          suppressWatcherDepth--;
-        }
+        });
         // Populate domain data cache
         const config = await loadDomainConfig();
         if (isMcpError(config)) return config;
@@ -425,7 +418,7 @@ server.registerTool(
   async () =>
     rwlock.read(async () => {
       return {
-        content: [{ type: "text", text: `txId: ${txId}\ndomainDirty: ${domainDirty}` }],
+        content: [{ type: "text", text: `txId: ${watcher.txId}\ndomainDirty: ${domainDirty}` }],
       };
     })
 );
@@ -597,17 +590,7 @@ server.registerTool(
 // ── File Watcher ─────────────────────────────────────────────────────────────
 
 function setupWatcher(): void {
-  if (!fs.existsSync(CONFIG_PATH)) return;
-
-  fs.watch(CONFIG_PATH, () => {
-    if (suppressWatcherDepth > 0) return;
-    if (expectedChanges.consume(CONFIG_WATCH_KEY)) return;
-    txId++;
-    domainDirty = true;
-    domainConfigCache = null;
-    domainDataCache = null;
-    emitLog("warning", `External change detected: domain-config.json (txId → ${txId})`);
-  });
+  if (fs.existsSync(CONFIG_PATH)) watcher.start();
 
   // Periodically purge expired entries from expectedChanges
   setInterval(() => expectedChanges.purgeExpired(), 30_000).unref();
@@ -623,6 +606,37 @@ export async function startServer(loc: ResolvedLocations = resolveLocations({}, 
   CONFIG_FILENAME = loc.configFileName;
   CONFIG_WATCH_KEY = loc.configWatchKey;
   EXTRACTED_EPHEMERAL = loc.extractedEphemeral;
+
+  // Constructed unconditionally — the constructor performs no filesystem
+  // access — so txId always has an owner, even when domain-config.json
+  // doesn't yet exist on disk; setupWatcher() below decides whether to
+  // actually start it. watchDirs names the config file itself (not a
+  // directory): the watcherFactory below watches that single file and
+  // reports every event under the canonical CONFIG_WATCH_KEY, which is the
+  // exact key `expect()` stores, so Layer-2 suppression matches.
+  watcher = new OptimisticWatcher({
+    watchDirs: [CONFIG_PATH],
+    expected: expectedChanges,
+    watcherFactory: (p, onEvent) => {
+      const w = fs.watch(p, () => onEvent(CONFIG_WATCH_KEY));
+      // unref, or this handle alone keeps the process alive after stdin closes
+      // (#70). shutdown() calls watcher.stop(), but shutdown() is wired only to
+      // SIGINT/SIGTERM — a client that disconnects by closing stdin raises
+      // neither, so stop() is never reached on that path and the server orphans.
+      // Measured: with the handle ref'd the process was still running 8s after
+      // stdin close; unref'd it exits ~immediately, matching a no-config server
+      // (where the existsSync guard means no handle is created at all).
+      // Same idiom as the purgeExpired interval below.
+      w.unref();
+      return { close: () => w.close() };
+    },
+    onExternalChange: () => {
+      domainDirty = true;
+      domainConfigCache = null;
+      domainDataCache = null;
+      emitLog("warning", `External change detected: domain-config.json (txId → ${watcher.txId})`);
+    },
+  });
 
   const domainIndexPath = path.join(EXTRACTED_DIR, "domain-index");
   if (!fs.existsSync(domainIndexPath)) {
@@ -642,6 +656,7 @@ export async function startServer(loc: ResolvedLocations = resolveLocations({}, 
   // Graceful shutdown
   function shutdown() {
     console.error("[c3-domain-manager] Shutting down...");
+    watcher.stop();
     server.close().catch(() => {});
     if (EXTRACTED_EPHEMERAL) {
       try { fs.rmSync(EXTRACTED_DIR, { recursive: true, force: true }); } catch { /* best-effort */ }
