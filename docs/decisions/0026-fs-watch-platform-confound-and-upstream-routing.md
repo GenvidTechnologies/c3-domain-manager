@@ -1,8 +1,8 @@
-# ADR 0026: Close the `fs.watch` platform confound and route #68's fix upstream
+# ADR 0026: Close the `fs.watch` platform confound, route #68's fix upstream, and adopt it
 
 **Status:** Accepted
-**Date:** 2026-08-15
-**Issue:** #68 (the `txId` double-bump) and GenvidTechnologies/mcp-utils#12 (the upstream fix proposal this record routes the work to)
+**Date:** 2026-08-15 (confound measurement, upstream routing); 2026-08-16 (adoption)
+**Issue:** #68 (the `txId` double-bump), #70 (the `FSWatcher` handle leak), and GenvidTechnologies/mcp-utils#12 (the upstream fix this record routed the work to, since shipped in mcp-utils 0.7.0)
 
 ---
 
@@ -16,7 +16,8 @@ which factor is responsible." That table also only covered the self-write
 path (`Layer 2`, `ExpectedChanges.consume`), leaving the external-write path
 unmeasured, and it did not investigate whether the bug's root cause was
 `server.ts`-local or lived one level down, in mcp-utils' own watcher
-primitive. This record discharges that deferred investigation.
+primitive. This record discharges that investigation, routes the fix
+upstream, and — now that upstream has shipped it — adopts it.
 
 ## Decision
 
@@ -54,7 +55,7 @@ nothing coalesces) but a **different code path** — Layer 2 is not involved
 at all. Governing semantic adopted: **`txId` counts logical changes, not
 watcher events.**
 
-### 3. The fix lands upstream, not here
+### 3. The fix was routed upstream, not fixed here
 
 `ExpectedChanges.consume` is single-shot by upstream's contract
 (`this.entries.delete(key)` on first match), and `OptimisticWatcher`
@@ -64,7 +65,9 @@ it is byte-identical between mcp-utils 0.5.1 and 0.6.0. The defect
 real `OptimisticWatcher` with its real default `fs.watch` factory, 4/4 runs
 on Windows, an external write gives `txIdDelta: 2` and an
 `expect()`-registered self-write gives `txIdDelta: 1` (should be 0). So
-every mcp-utils consumer on Windows has this bug.
+every mcp-utils consumer on Windows has this bug — a local patch inside
+`src/mcp/server.ts` would fix only this repo's symptom while leaving the
+shared root cause in place for everyone else.
 
 Filed as **GenvidTechnologies/mcp-utils#12**, proposing an `ObservedState`
 content-fingerprint ledger — reframing the question from "which event is
@@ -75,22 +78,73 @@ change still bumps, deletion still bumps. Control: four *distinct* external
 writes 200 ms apart produced **8 raw watch events → exactly 4 bumps**, 3/3
 runs — only duplicates collapse.
 
-### 4. `OptimisticWatcher` adoption is deferred
+### 4. Upstream shipped, and this repo adopted it
+
+GenvidTechnologies/mcp-utils#12 is closed. **mcp-utils 0.7.0** shipped the
+`ObservedState` content-fingerprint ledger as a third layer inside
+`OptimisticWatcher`, defaulted on
+(`options.observed === undefined ? new ObservedState() : options.observed`).
 
 The standing `CLAUDE.md` rule to audit `src/mcp/server.ts` for hand-rolled
-equivalents of mcp-utils exports is now **discharged for `setupWatcher`**:
-`OptimisticWatcher` *is* its upstream equivalent, and had never been audited
-against it. Outcome: adoption **deferred** until the fixed version ships, so
-adoption and the floor bump land together rather than adopting a still-broken
-watcher. Two contract mismatches to reconcile at adoption time: it takes
-`watchDirs: string[]` with a default factory doing
-`fs.watch(dir, { recursive: true })`, whereas this repo watches a single
-**file**; and its `suppress(fn)` is **async** where `writeDomainConfig` is
-synchronous. Also recorded: mcp-utils 0.6.0 differs from 0.5.1 in
-`walkFiles` **only**, which this repo does not import — the bump is inert
-here.
+equivalents of mcp-utils exports is now discharged for `setupWatcher`:
+this repo bumped its floor to `^0.7.0` and replaced the hand-rolled watcher
+with `OptimisticWatcher` outright. Adoption shape, and the three points that
+read as settled but needed checking against the packed API rather than
+assumed:
 
-### 5. Why a content hash, not `stat` (the rejected alternative)
+- `writeDomainConfig` stays **synchronous**. `suppress<T>(fn: () =>
+  Promise<T>)` is async-only, but `expect(filePath)` is a separate
+  synchronous method, and upstream documents Layer 2 as existing precisely
+  for events arriving *after* the suppress window closes — so the
+  synchronous write path uses `expect()`, not `suppress()`. `regenerate`
+  does use the async `suppress()`, since its handler is already async.
+- `expected: ExpectedChanges` is a **required** option on
+  `OptimisticWatcher` — adoption does **not** retire that import; the
+  existing instance is passed in.
+- `watchDirs` holds a single **file** path with an injected
+  `watcherFactory`. `WatcherFactory = (dir, onEvent) => WatchHandle` treats
+  its first argument as an opaque string, so watching one file through this
+  option is within contract; the default factory would otherwise do
+  `fs.watch(dir, { recursive: true })` against a directory.
+- `suppressWatcherDepth` was **deleted** (6 occurrences) as provably dead —
+  incremented and decremented synchronously around a synchronous write
+  while `fs.watch` delivers asynchronously, so the depth was always 0 on
+  arrival.
+- The `OptimisticWatcher` constructor is pure (field assignment only, no fs
+  access), so it is constructed unconditionally to own `txId` even when no
+  config file exists, and only `start()`ed behind the existing
+  `fs.existsSync(CONFIG_PATH)` guard.
+
+Measured outcome, real server over stdio, 3/3 identical runs on Windows:
+
+| | before | after |
+|---|---|---|
+| self-write `txId` delta | 2 | 1 |
+| footer `txId` == state `txId` | false | true |
+| replaying the footer `txId` | rejected | accepted |
+| external-write `txId` delta | 2 | 1 |
+| external-change warnings | 2 | 1 |
+
+The last row doubles as the **dead-watcher control**: 1 rather than 0 proves
+events are still delivered post-fix, which a passing test alone could not
+distinguish from a watcher that had silently stopped firing.
+
+### 5. #70 needed more than `stop()` — a corrected premise
+
+The plan (and the issue) assumed adopting `OptimisticWatcher` would close
+#70 because it has `stop()`. It did not. `shutdown()` does call
+`watcher.stop()`, but `shutdown()` is wired only to `SIGINT`/`SIGTERM`, and
+a client that disconnects by closing stdin raises neither — so `stop()` is
+never reached on that path. Measured: the server was still running 8
+seconds after stdin close both **before and after** adoption. The fix is
+`unref()`ing the `FSWatcher` inside the `watcherFactory`; after that it
+exits in **2539 ms**, against **2531 ms** for a no-config server where the
+`existsSync` guard means no watch handle is ever created. That no-config arm
+was the control that isolated the handle as the cause — same `unref` idiom
+as the `purgeExpired` interval beside it. The obvious answer (`stop()` is
+enough) was wrong, and only a direct timing measurement caught it.
+
+### 6. Why a content hash, not `stat` (the rejected alternative)
 
 The obvious cheap fingerprint was measured and **rejected**. On NTFS, over
 two *distinct* writes of equal size: `size:mtimeMs` collided **54/60 at a
@@ -115,41 +169,59 @@ unsound option is the one that looks obviously sufficient.
 - **CI consequence, stronger than previously recorded:** the shared
   `public-github-actions` `node-gate.yml:17` is `runs-on: ubuntu-latest`
   with **no OS input at all**. A Windows leg is therefore a change to a
-  *third* repo, not a toggle — which is why the upstream proposal's tests
-  are made platform-independent by injectable seams instead.
-- The `FSWatcher` leak split out as **#70** (this repo) — confirmed defect,
-  isolated symptom: with a config present the server survives stdin close
-  by 6s+; with no config, so `src/mcp/server.ts:600`'s `existsSync` guard
-  skips watcher creation, it exits 0. Same binary, one variable.
+  *third* repo, not a toggle — which is why the upstream fix's tests are
+  made platform-independent by injectable seams instead.
+- **Test-shape consequence, general lesson.** `test/mcpHarness.ts`'s
+  `SELF_WRITE_OBSERVED_TXID_BUMPS` moved from `2` to `1`, and K3 stopped
+  being observation-gated. An observation gate is correct while a platform
+  divergence is real, and becomes a **liability** the moment it stops being
+  real: a gate that asserts only when the bug appears is indistinguishable
+  from one that never fires because the subject is dead, and it keeps
+  passing either way — nothing detects that expiry on its own. K3's
+  replacement is deliberately two-sided (absence of the spurious warning
+  *and* an accepted replay of the footer `txId`) for exactly that reason,
+  and it was falsified against the pre-fix server (1/1 failing) rather than
+  assumed to be correct.
 
 ## Compromise
 
 **What was rejected.** Fixing `ExpectedChanges.consume`/`OptimisticWatcher`
-locally, inside `src/mcp/server.ts`, was rejected: the defect lives in
-mcp-utils' shared primitive, reproduces with no consumer involved, and
-affects every mcp-utils consumer on Windows — a local patch here would fix
-only this repo's symptom while leaving the shared root cause in place for
-everyone else. A `stat`-based (`size:mtimeMs`) fingerprint was rejected for
-the `ObservedState` proposal in favor of a content hash, per measurement 5
-above: it silently swallows a genuine same-size write inside NTFS's ~1 ms
+locally, inside `src/mcp/server.ts`, was rejected: the defect lived in
+mcp-utils' shared primitive, reproduced with no consumer involved, and
+affected every mcp-utils consumer on Windows — a local patch would have
+fixed only this repo's symptom while leaving the shared root cause in place
+for everyone else. A `stat`-based (`size:mtimeMs`) fingerprint was rejected
+for the `ObservedState` proposal in favor of a content hash, per measurement
+6 above: it silently swallows a genuine same-size write inside NTFS's ~1 ms
 mtime tick, which is a real missed change rather than a cosmetic
-over-count. Adopting `OptimisticWatcher` now, ahead of the fix, was
-rejected — it would replace a known-broken local watcher with a
-known-broken shared one, for no gain.
+over-count. Adopting `OptimisticWatcher` *ahead of* the fix was rejected at
+the time this record was first drafted — it would have replaced a
+known-broken local watcher with a known-broken shared one, for no gain; that
+constraint is now moot, since the fix shipped before adoption happened.
+Treating `stop()` alone as sufficient to close #70 was also rejected, once
+measurement showed the process still running 8 seconds after stdin close
+with `stop()` wired to `shutdown()` alone — `unref()` on the underlying
+`FSWatcher` handle was required in addition.
 
-**What was accepted.** #68 stays open and unfixed on this branch; the work
-here is measurement and routing, not remediation. The reconciliation of
-`OptimisticWatcher`'s `watchDirs: string[]`/directory-recursive contract
-against this repo's single-file watch, and its async `suppress(fn)` against
-`writeDomainConfig`'s synchronous write, is deferred to adoption time rather
-than resolved now.
+**What was accepted.** The reconciliation of `OptimisticWatcher`'s
+`watchDirs: string[]`/directory-recursive-by-default contract against this
+repo's single-file watch was resolved via the `watcherFactory` injection
+point rather than by watching a directory; and its async `suppress(fn)`
+against `writeDomainConfig`'s synchronous write was resolved by using the
+separate synchronous `expect()` method instead, leaving `suppress()` in use
+only where the caller (`regenerate`) is already async.
 
 ## Consequences
 
-- **#68 remains open.** This branch records and routes; it does not fix.
-  `test/mcpHarness.ts`'s `SELF_WRITE_OBSERVED_TXID_BUMPS` stays at `2` and
-  the `KNOWN-BROKEN` observation-gated test stays as-is.
-- When mcp-utils ships the fix: bump the floor (a two-place change —
-  `package.json` **and** the stated floor in `CLAUDE.md`, plus an entry in
-  the "When bumping `@genvidtech/mcp-utils`…" chain), add the ~two-line
-  `ObservedState` guard, flip the constant to `1`, and close #68 and #70.
+- **#68 and #70 are both closed by this branch.** The double-bump is fixed
+  via upstream's `ObservedState` ledger (adopted, not hand-rolled here), and
+  the leaked `FSWatcher` handle is fixed via `unref()` in the injected
+  `watcherFactory`.
+- The `@genvidtech/mcp-utils` floor is now `^0.7.0`, load-bearing for
+  `OptimisticWatcher` + `ObservedState` (see `package.json` and the stated
+  floor and adoption chain in `CLAUDE.md`).
+- `test/mcpHarness.ts`'s `SELF_WRITE_OBSERVED_TXID_BUMPS` is `1`; K3 is a
+  regular (non-observation-gated) assertion covering both the self-write and
+  external-write paths.
+- `suppressWatcherDepth` is removed from `src/mcp/server.ts`; it was
+  provably dead once `OptimisticWatcher` owns write suppression.
