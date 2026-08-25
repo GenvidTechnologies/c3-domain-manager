@@ -8,21 +8,21 @@ stale_after: 2027-08-16
 generated: { by: process:maintain-wiki, at: 2026-08-16T00:00:00Z }
 sources:
   - id: adr0022
-    resource: ../docs/decisions/0022-section-extension-provenance.md
+    resource: decisions/0022-section-extension-provenance.md
     title: "ADR 0022: Section-extension provenance split"
     last_modified: 2026-08-13
   - id: adr0022-issue
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/60
     title: "Issue #60 — re-examine SECTION_SOURCE_EXTENSIONS now that c3source 2.0.0 unifies section finders"
   - id: adr0023
-    resource: ../docs/decisions/0023-decline-stray-file-diagnostic.md
+    resource: decisions/0023-decline-stray-file-diagnostic.md
     title: "ADR 0023: Decline a stray-file diagnostic"
     last_modified: 2026-08-14
   - id: adr0023-issue
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/62
     title: "Issue #62 — decide whether to report stray files in C3 section directories"
   - id: adr0024
-    resource: ../docs/decisions/0024-editor-validation-single-enumeration.md
+    resource: decisions/0024-editor-validation-single-enumeration.md
     title: "ADR 0024: editorValidation.ts routes through the single eventSheets/ enumeration"
     last_modified: 2026-08-15
   - id: adr0024-issue
@@ -151,7 +151,7 @@ it as the reason to act.
 
 ## Related
 
-- [Upstream dependency routing](/upstream-dependency-routing.md) — a
+- [Upstream dependency routing](./upstream-dependency-routing.md) — a
   different domain, same discipline: trust the artifact you can inspect
   (a packed `.d.ts`, a re-run grep) over a description of it (release notes,
   a gloss).

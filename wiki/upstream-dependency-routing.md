@@ -8,7 +8,7 @@ stale_after: 2026-12-31
 generated: { by: process:maintain-wiki, at: 2026-08-16T00:00:00Z }
 sources:
   - id: adr0026
-    resource: ../docs/decisions/0026-fs-watch-platform-confound-and-upstream-routing.md
+    resource: decisions/0026-fs-watch-platform-confound-and-upstream-routing.md
     title: "ADR 0026: Close the fs.watch platform confound, route #68's fix upstream, and adopt it"
     last_modified: 2026-08-16
   - id: adr0026-issue68
@@ -18,14 +18,14 @@ sources:
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/70
     title: "Issue #70 — the config fs.watch handle is never closed, orphaning the server after stdin close"
   - id: adr0021
-    resource: ../docs/decisions/0021-decline-drift-diagnostic.md
+    resource: decisions/0021-decline-drift-diagnostic.md
     title: "ADR 0021: Decline a compiled-output drift diagnostic"
     last_modified: 2026-08-12
   - id: adr0021-issue
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/48
     title: "Issue #48 — spike: evaluate a compiled-output drift diagnostic"
   - id: adr0022
-    resource: ../docs/decisions/0022-section-extension-provenance.md
+    resource: decisions/0022-section-extension-provenance.md
     title: "ADR 0022: Section-extension provenance split"
     last_modified: 2026-08-13
   - id: adr0022-issue
@@ -148,9 +148,9 @@ lived on.
 
 ## Related
 
-- [fs.watch platform behaviour](/fs-watch-platform-behaviour.md) — the same
+- [fs.watch platform behaviour](./fs-watch-platform-behaviour.md) — the same
   #68/#70 investigation, from the angle of the platform-dependent behaviour
   the routed fix had to account for.
-- [Documentation drift modes](/documentation-drift-modes.md) — both pages
+- [Documentation drift modes](./documentation-drift-modes.md) — both pages
   turn on the same discipline: trust the artifact you can inspect (packed
   types, a re-run grep) over a description of it (release notes, a gloss).

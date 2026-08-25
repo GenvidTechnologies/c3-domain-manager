@@ -49,7 +49,14 @@ const server = new McpServer(
 );
 
 const __pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-exposeDocs(server, __pkgDir);
+// `wiki/` is the OKF bundle root and the published documentation tier (ADR 0027).
+// `recursive` is mandatory, not cosmetic. Measured against this tree: it
+// serves 36 names with, and 6 without — so dropping it silently loses the
+// 30 documents under `wiki/decisions/`, `wiki/reference/` and
+// `wiki/process/`, leaving only the bundle-root files. `walkFiles` returns
+// `[]` rather than throwing, so that loss surfaces as an empty resource,
+// not an error (ADR 0027 Q6).
+exposeDocs(server, __pkgDir, { docsDir: "wiki", recursive: true });
 
 // ── Server State ─────────────────────────────────────────────────────────────
 

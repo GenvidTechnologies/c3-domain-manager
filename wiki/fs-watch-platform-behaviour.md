@@ -8,7 +8,7 @@ stale_after: 2027-08-16
 generated: { by: process:maintain-wiki, at: 2026-08-16T00:00:00Z }
 sources:
   - id: adr0026
-    resource: ../docs/decisions/0026-fs-watch-platform-confound-and-upstream-routing.md
+    resource: decisions/0026-fs-watch-platform-confound-and-upstream-routing.md
     title: "ADR 0026: Close the fs.watch platform confound, route #68's fix upstream, and adopt it"
     last_modified: 2026-08-16
   - id: adr0026-issue
@@ -18,7 +18,7 @@ sources:
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/70
     title: "Issue #70 — the config fs.watch handle is never closed, orphaning the server after stdin close"
   - id: adr0025
-    resource: ../docs/decisions/0025-mcp-server-stdio-test-harness.md
+    resource: decisions/0025-mcp-server-stdio-test-harness.md
     title: "ADR 0025: MCP server stdio test harness"
     last_modified: 2026-08-15
   - id: adr0025-issue
@@ -154,6 +154,6 @@ exhibits it, which is exactly what both records above did.
 
 ## Related
 
-- [Upstream dependency routing](/upstream-dependency-routing.md) — the same
+- [Upstream dependency routing](./upstream-dependency-routing.md) — the same
   #68/#70 investigation this page describes is also the exemplar for routing
   a shared-primitive defect upstream rather than patching it locally.
