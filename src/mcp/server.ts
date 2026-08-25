@@ -49,7 +49,11 @@ const server = new McpServer(
 );
 
 const __pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-exposeDocs(server, __pkgDir);
+// `wiki/` is the OKF bundle root and the published documentation tier (ADR 0027).
+// `recursive` is mandatory, not cosmetic: without it `wiki/decisions/`,
+// `wiki/reference/` and `wiki/process/` are all unserved — measured 6 of 36
+// names against this tree.
+exposeDocs(server, __pkgDir, { docsDir: "wiki", recursive: true });
 
 // ── Server State ─────────────────────────────────────────────────────────────
 
