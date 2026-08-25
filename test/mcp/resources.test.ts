@@ -5,19 +5,29 @@ import { startHarness } from "../mcpHarness.js";
 
 /**
  * Pins the `exposeDocs` resource surface (`docs:///` listing + read) against
- * the post-move `wiki/` bundle shape — plan.md Task 2, acceptance rows D2,
- * D3, D8, D9, D10.
+ * the `wiki/` bundle shape — issue #74, acceptance rows D2, D3, D8, D9, D10;
+ * see `wiki/decisions/0027-retire-docs-tier-into-the-wiki-bundle.md`.
  *
- * INTENTIONALLY RED until Task 6 repoints `src/mcp/server.ts` at
- * `exposeDocs(server, __pkgDir, { docsDir: "wiki", recursive: true })`: D2,
- * D3, D9 and D10 fail against today's `{ docsDir: "docs", recursive: false }`
- * wiring — either the resource is entirely absent (the `wiki/reference` /
- * `wiki/process` / `wiki/decisions` subdirectories don't exist until Task 3)
- * or, for the one path that DOES exist today (`docs:///decisions/0026-...`
- * would require descending into `docs/decisions/`), the server's
- * non-recursive `exposeDocs` refuses a nested name by shape before any
- * lookup happens. D8 passes throughout: `docs:///readme` is served from
- * `packageDir`, not `docsDir`, so it is unaffected by the move.
+ * Written to fail first, and green only once `src/mcp/server.ts` calls
+ * `exposeDocs(server, __pkgDir, { docsDir: "wiki", recursive: true })`.
+ *
+ * D8 passes regardless of that wiring: `docs:///readme` is a static resource
+ * resolved from `packageDir`, not from `docsDir`.
+ *
+ * D9 and D10 are deliberately mutually controlling. D10 is a zero-hit
+ * assertion over an enumerated set of the five pre-move URIs, and on its own
+ * it is satisfied just as well by a resource serving *nothing* as by a
+ * completed reshape — which is not a hypothetical: while `docsDir` still
+ * pointed at a `docs/` directory that had already been removed, `walkFiles`
+ * returned `[]` for the missing directory without erroring and the server
+ * served zero templated documents, passing D10 vacuously. D9 requires those
+ * same five documents to be readable under their new URIs, so the pair keeps
+ * "the reshape succeeded" distinguishable from "the list is empty". Grade
+ * D10 only alongside a green D9.
+ *
+ * That silent-empty-resource shape is the failure this file exists to catch:
+ * it is what `GenvidTechnologies/construct3-chef#198` shipped undetected, and
+ * nothing in lint, typecheck, or the rest of the suite observes it.
  */
 
 /** Extracts the text of the first content block, failing loudly if it isn't a text block. */

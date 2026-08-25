@@ -180,7 +180,7 @@ export function isScriptSourceName(name: string): boolean {
  * Excludes C3-editor-local dirs (uistate/) — never project source, never a domain.
  * ts-defs/ is the deliberate exemption: it IS editor-generated, but this tool keeps
  * it walked and reported so a project can index its generated .d.ts files into a
- * domain via scriptDirs (see docs/decisions/0013-*.md). A naive
+ * domain via scriptDirs (see wiki/decisions/0013-*.md). A naive
  * !isEditorLocalPath(name) would drop it, because EDITOR_LOCAL_EXCLUSIONS.dirs
  * contains "ts-defs".
  *
