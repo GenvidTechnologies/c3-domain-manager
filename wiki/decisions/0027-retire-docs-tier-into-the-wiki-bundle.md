@@ -227,10 +227,20 @@ repeated at every scaffold-decision point in its body; the plugin's
 `practice-detect.mjs` hardcodes the same literal path independently. Under
 `--non-interactive` (alias `--auto`), a missing `docs/wiki-schema.md` is
 scaffolded **automatically** from the bundled template — silently recreating
-a `docs/` directory holding a pristine, un-edited copy of the schema and
-discarding every project-specific edit this repo's `wiki/schema.md` carries
-(the OKF-pin table, the Option-B bundle-root note, the wiki-links section
-above, none of which exist in the bundled template).
+a `docs/` directory holding a pristine, un-edited copy of the schema.
+
+Be precise about the mechanism, because the obvious reading overstates it in
+one direction and understates it in another. The scaffold writes to
+`docs/wiki-schema.md`; it does **not** touch `wiki/schema.md`, so this repo's
+project-specific edits (the OKF-pin table, the bundle-root note, the
+wiki-links section above) are not erased. What it produces instead is **two
+competing copies of one schema** — a pristine one at the resurrected path and
+the edited one inside the bundle — which is exactly the second-copy-that-drifts
+trap this consolidation exists to close, reintroduced by the tool that
+maintains the wiki. Worse, the copy it creates is the one every hardcoded
+consumer looks for: `practice-detect.mjs` reads that literal path, and
+`run-retro` routes on its *presence*, so both would find the pristine template
+and treat it as authoritative while the real schema sits unread.
 
 Four mitigations are recorded here, together, because no single one closes
 the hazard on its own:
