@@ -110,13 +110,20 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    `plugin/.claude-plugin/plugin.json` (`mcpServers.c3-domain-manager`, e.g.
    `@genvidtech/c3-domain-manager@0.3.0`) and references the pinned version in its
    `c3-explorer` / `c3-implementer` agent docs. Every publish here therefore needs a
-   follow-up issue there to bump the pin and reconcile the tool surface. Open one with
+   follow-up issue there to bump the pin and reconcile the surface. Open one with
    `gh issue create --repo GenvidTechnologies/claude-code-plugin-gvt-construct3`, and call out
-   any **MCP tool-surface change** (a tool added/renamed/removed) — that repo runs
-   `docs/tool-surface-reconciliation.md` and updates the `c3-explorer` `tools:`
-   allow-list off it. Example: 0.4.0 added the `validate-editor` READ_ONLY tool, so the
-   request flagged it for the allow-list (issue
+   any **MCP tool-surface change** (a tool added/renamed/removed) inside that issue's
+   body — that repo runs `docs/tool-surface-reconciliation.md` and updates the
+   `c3-explorer` `tools:` allow-list off it. Example: 0.4.0 added the `validate-editor`
+   READ_ONLY tool, so the request flagged it for the allow-list (issue
    [#12](https://github.com/GenvidTechnologies/claude-code-plugin-gvt-construct3/issues/12)).
+   Also call out a **resource-surface change** (a `docs:///` URI added, renamed, or
+   removed) the same way — resources are a separate MCP capability from tools, so
+   this callout is additional content inside the same follow-up issue, not a second
+   issue, and it does **not** touch the `c3-explorer` `tools:` allow-list. The next
+   publish's issue must name the reshape from this release: all 5 pre-existing
+   `docs:///` URIs renamed to path-shaped equivalents, and 27 decision-record URIs
+   added under `docs:///decisions/`.
 
 ## Notes & gotchas
 

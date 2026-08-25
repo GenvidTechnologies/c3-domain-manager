@@ -4,9 +4,33 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
-(see `docs/releasing.md`).
+(see `wiki/process/releasing.md`).
 
 ## [Unreleased]
+
+### Changed
+- The MCP `docs:///` resource surface reshaped to mirror the project's new
+  `wiki/` documentation bundle (#74/#75, ADR 0027). `resources/list` used to
+  return a single entry — 0.7.0's `exposeDocs` call passed `list: undefined`,
+  so every templated document beyond the one hardcoded `docs:///readme` name
+  was readable only if a client already knew its name. It now enumerates all
+  **37** shipped documents. All five previously-published `docs:///` URIs
+  move to path-shaped equivalents, and the 27 decision records under
+  `wiki/decisions/` become reachable by URI for the first time:
+  ```
+  docs:///TOC                 -> docs:///index
+  docs:///wiki-schema         -> docs:///schema
+  docs:///domain-architecture -> docs:///reference/domain-architecture
+  docs:///releasing           -> docs:///process/releasing
+  docs:///issue-triage        -> docs:///process/issue-triage
+  (new)                       -> docs:///decisions/0001-… through 0027-…
+  ```
+  `docs/` is retired; the package now ships `wiki/` in `package.json`'s
+  `files` allow-list instead (36 `wiki/**/*.md` files in the tarball).
+- Bump `@genvidtech/mcp-utils` floor to `^0.8.0` (#74) — load-bearing for
+  `exposeDocs`'s `{ docsDir, recursive }` option, which is what makes the
+  resource-surface reshape above possible without reproducing
+  `GenvidTechnologies/construct3-chef#198`'s empty-tarball break.
 
 ## [0.8.0] - 2026-08-16
 
