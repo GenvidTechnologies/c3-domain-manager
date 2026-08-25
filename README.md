@@ -17,7 +17,7 @@ Domain-driven design analysis for Construct 3 projects. Classifies source files 
 
 - Node.js >= 22
 - A Construct 3 project with `eventSheets/`, `layouts/`, and `scripts/` directories
-- A `domain-config.json` at the project root (see [docs/domain-architecture.md](docs/domain-architecture.md))
+- A `domain-config.json` at the project root (see [wiki/reference/domain-architecture.md](wiki/reference/domain-architecture.md))
 
 ## Installation
 
@@ -105,7 +105,7 @@ All subcommands share three global options:
 | `--config <path>` | `<project-root>/domain-config.json` | Path to `domain-config.json`. Relative paths resolve from the project root. |
 | `--extracted <path>` | `<project-root>/extracted` | Output directory for the generated domain index. Pass `none` for an ephemeral temp dir auto-cleaned on exit. |
 
-See [docs/domain-architecture.md](docs/domain-architecture.md#paths-and-locations) for the full `--project-dir` resolution precedence (flag > `C3_PROJECT_DIR` > `project.c3proj` discovery > cwd).
+See [wiki/reference/domain-architecture.md](wiki/reference/domain-architecture.md#paths-and-locations) for the full `--project-dir` resolution precedence (flag > `C3_PROJECT_DIR` > `project.c3proj` discovery > cwd).
 
 ## MCP server
 
@@ -211,4 +211,4 @@ Type definitions are in `src/domain/types.ts`: `DomainConfig`, `DomainDefinition
 
 ## Further reading
 
-- [docs/domain-architecture.md](docs/domain-architecture.md) — domain model concepts, configuration schema, classification rules
+- [wiki/reference/domain-architecture.md](wiki/reference/domain-architecture.md) — domain model concepts, configuration schema, classification rules

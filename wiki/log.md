@@ -12,7 +12,18 @@ heading) is *prepended* above everything else — the insertion point moves from
 the bottom to the top, but prepending never touches a prior entry's text, so
 the append-only guarantee holds exactly as before. If a past entry itself needs
 correcting, add a new entry that says so; never edit or remove the old one in
-place. See `docs/wiki-schema.md` for the full maintenance schema.
+place. See `wiki/schema.md` for the full maintenance schema.
+
+## 2026-08-25
+
+* **Relocation**: `docs/` was retired entirely and folded into this bundle
+  (issue #74/#75) — ADRs moved from `docs/decisions/` to `wiki/decisions/`,
+  `domain-architecture.md` to `wiki/reference/`, `releasing.md` and
+  `issue-triage.md` to `wiki/process/`, and `wiki-schema.md` to `schema.md`
+  at the bundle root. Per the append-only rule above, the `../docs/decisions/`
+  links in the entries below are **retained unedited as history** — they
+  record where those records lived when the pages were ingested, not where
+  they live now.
 
 ## 2026-08-16
 

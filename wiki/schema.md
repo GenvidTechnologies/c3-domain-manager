@@ -4,8 +4,8 @@ type: reference
 
 # Wiki Maintenance Schema
 
-> Project conventions consumed by `/gvt-dev:maintain-wiki`. Copy this file to
-> `docs/wiki-schema.md` and edit it for your project. This is the **maintenance
+> Project conventions consumed by `/gvt-dev:maintain-wiki`. This is this
+> project's own edited copy, kept at `wiki/schema.md`. This is the **maintenance
 > schema** for the three-tier wiki: `raw/` (immutable captured sources) →
 > `<wikiDir>/` (LLM-maintained pages, `index.md`, `log.md`) → this schema (the rules
 > that govern how the first two are kept in sync).
@@ -92,12 +92,12 @@ fits. A claim drawn from a source carries a footnote keyed to that source's
 
   **In-repo records are the exception, and in this project the common one.**
   When a page's source is an artifact this repo already versions — an ADR
-  under `docs/decisions/`, a committed doc — it is **not** re-captured into
+  under `decisions/`, a committed doc — it is **not** re-captured into
   `<rawDir>/`. Git history already gives it the immutability `<rawDir>/`
   exists to provide, and a snapshot would be a second copy that drifts from
   the record it copies (which is the failure `documentation-drift-modes.md`
   documents). Write the pair as: one entry with
-  `resource: ../docs/decisions/<file>.md`, one with the durable
+  `resource: decisions/<file>.md`, one with the durable
   `https://github.com/GenvidTechnologies/c3-domain-manager/issues/<n>` URL
   that survives bundle extraction. Set `last_modified` from
   `git log -1 --format=%ad --date=short -- <path>`, never by guess.
@@ -227,13 +227,15 @@ forms are legal (§6.1):
 - **Ordinary relative** — `./other-page.md` for a sibling page in the same
   directory, `../<subdir>/other-page.md` for a page in another subdirectory.
 
-A link that escapes the bundle root entirely — e.g. to `../docs/wiki-schema.md`
-or `../docs/decisions/0001-*.md` — remains legal per §6.1 as an ordinary
-relative link, but it is **unresolvable to an external OKF consumer** that
-only receives the `<wikiDir>/` bundle on its own. Treat this as a deliberate,
-documented trade-off for the rare page that genuinely needs to point outside
-the bundle (e.g. to this schema doc or an ADR) — not as a pattern to reach
-for by default.
+A link that escapes the bundle root entirely remains legal per §6.1 as an
+ordinary relative link, but it is **unresolvable to an external OKF consumer**
+that only receives the `<wikiDir>/` bundle on its own. In this project there
+is currently nothing to escape the bundle root *for*: `schema.md` and
+`decisions/0001-*.md`, the two things a page would once have pointed outside
+the bundle to reach, both moved inside it when `docs/` was retired — the
+bundle is now self-contained. Treat an escaping link as a deliberate,
+documented trade-off if a future page ever needs one — not as a pattern to
+reach for by default.
 
 Consumers **must tolerate broken links** (§6.1): a link whose target doesn't
 exist yet is not malformed — it may simply be knowledge not yet written.
