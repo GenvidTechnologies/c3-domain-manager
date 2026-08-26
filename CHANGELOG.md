@@ -8,6 +8,8 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-26
+
 ### Changed
 - The MCP `docs:///` resource surface reshaped to mirror the project's new
   `wiki/` documentation bundle (#74/#75, ADR 0027). `resources/list` used to
