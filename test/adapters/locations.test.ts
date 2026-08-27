@@ -3,9 +3,33 @@ import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { resolveLocations, resolveProjectRoot, NO_EXTRACTED } from "../../src/adapters/locations.js";
+import {
+  resolveLocations,
+  resolveProjectRoot,
+  NO_EXTRACTED,
+  deriveProjectId,
+  deriveUniqueProjectIds,
+  buildRegistry,
+} from "../../src/adapters/locations.js";
 import { ExpectedChanges, isMcpError } from "@genvidtech/mcp-utils";
 import { makeTempDir, removeTempDir } from "../syntheticProject.js";
+import type { EmitFn } from "../../src/adapters/projectContext.js";
+
+const noopEmit: EmitFn = () => {};
+
+/** Temporarily replaces console.error, capturing every call's joined args as a string. */
+function captureConsoleError<T>(fn: () => T): { result: T; messages: string[] } {
+  const original = console.error;
+  const messages: string[] = [];
+  console.error = (...args: unknown[]) => {
+    messages.push(args.map(String).join(" "));
+  };
+  try {
+    return { result: fn(), messages };
+  } finally {
+    console.error = original;
+  }
+}
 
 // Use a deterministic project root that is always absolute and works cross-platform.
 const root = path.resolve(os.tmpdir(), "c3dm-test-proj");
@@ -240,5 +264,115 @@ describe("resolveProjectRoot", () => {
 
     const result = resolveProjectRoot({}, tmpDir, {});
     assert.isTrue(isMcpError(result));
+  });
+});
+
+describe("deriveProjectId", () => {
+  it("derives from a relative path with a parent segment", () => {
+    assert.equal(deriveProjectId("../game-a"), "game-a");
+  });
+
+  it("lowercases and hyphenates whitespace in a bare name", () => {
+    assert.equal(deriveProjectId("Game A"), "game-a");
+  });
+});
+
+describe("deriveUniqueProjectIds", () => {
+  it("assigns each root's derived id when there is no collision", () => {
+    const ids = deriveUniqueProjectIds([
+      path.join(os.tmpdir(), "one", "game-a"),
+      path.join(os.tmpdir(), "two", "game-b"),
+    ]);
+    assert.deepEqual(ids, ["game-a", "game-b"]);
+  });
+
+  it("resolves a basename collision as base, base-2 (order-stable) and warns on stderr", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-dup-a", "sample");
+    const rootB = path.join(os.tmpdir(), "c3dm-dup-b", "sample");
+
+    const { result: ids, messages } = captureConsoleError(() => deriveUniqueProjectIds([rootA, rootB]));
+
+    assert.deepEqual(ids, ["sample", "sample-2"]);
+    assert.isTrue(
+      messages.some((m) => m.includes("sample")),
+      `expected a stderr warning naming the 'sample' collision, got: ${JSON.stringify(messages)}`,
+    );
+  });
+});
+
+describe("buildRegistry", () => {
+  it("derives ids from roots when no explicit id is given", () => {
+    const registry = buildRegistry(
+      [
+        { root: path.join(os.tmpdir(), "c3dm-br-1", "game-a") },
+        { root: path.join(os.tmpdir(), "c3dm-br-1", "game-b") },
+      ],
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["game-a", "game-b"]);
+  });
+
+  it("an explicit id overrides derivation from the root", () => {
+    const registry = buildRegistry(
+      [{ root: path.join(os.tmpdir(), "c3dm-br-2", "x"), id: "alpha" }],
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["alpha"]);
+    const ctx = registry.resolve("alpha");
+    assert.isFalse(isMcpError(ctx));
+  });
+
+  it("rejects two --project entries at the same directory (same default configPath)", () => {
+    const sameRoot = path.join(os.tmpdir(), "c3dm-br-3", "sample");
+    assert.throws(
+      () => buildRegistry([{ root: sameRoot }, { root: sameRoot }], { emit: noopEmit }),
+      /duplicate configPath/,
+    );
+    try {
+      buildRegistry([{ root: sameRoot }, { root: sameRoot }], { emit: noopEmit });
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Two entries at the same directory derive distinct ids (sample, sample-2) —
+      // the rejection is on configPath, and must still name both of those ids.
+      assert.include(message, "sample");
+      assert.include(message, "sample-2");
+    }
+  });
+
+  it("rejects two distinct roots forced onto one configPath via a shared absolute --config", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-br-4", "alpha-root");
+    const rootB = path.join(os.tmpdir(), "c3dm-br-4", "beta-root");
+    const sharedConfig = path.join(os.tmpdir(), "c3dm-br-4", "shared-config.json");
+
+    try {
+      buildRegistry(
+        [
+          { root: rootA, id: "alpha", config: sharedConfig },
+          { root: rootB, id: "beta", config: sharedConfig },
+        ],
+        { emit: noopEmit },
+      );
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.include(message, "duplicate configPath");
+      assert.include(message, "alpha");
+      assert.include(message, "beta");
+    }
+  });
+
+  it("rejects two specs that explicitly collide on the same id", () => {
+    assert.throws(
+      () =>
+        buildRegistry(
+          [
+            { root: path.join(os.tmpdir(), "c3dm-br-5", "a"), id: "alpha" },
+            { root: path.join(os.tmpdir(), "c3dm-br-5", "b"), id: "alpha" },
+          ],
+          { emit: noopEmit },
+        ),
+      /duplicate project id 'alpha'/,
+    );
   });
 });
