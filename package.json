@@ -59,7 +59,8 @@
 		"test:noexit": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts 'test/**/*.test.ts'",
 		"lint": "eslint --ext .ts --max-warnings 0 src/ test/",
 		"typecheck": "tsc -p tsconfig.test.json --noEmit",
-		"corpus:scan": "node scripts/scan-corpus.mjs"
+		"corpus:scan": "node scripts/scan-corpus.mjs",
+		"verify:behaviour-preservation": "node scripts/verify-behaviour-preservation.mjs"
 	},
 	"engines": {
 		"node": ">=22"
