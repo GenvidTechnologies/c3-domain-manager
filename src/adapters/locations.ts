@@ -142,6 +142,15 @@ export interface ProjectSpec {
 export interface BuildRegistryOptions {
   /** Server-wide log sink, forwarded to every constructed `ProjectContext`. */
   emit: EmitFn;
+  /**
+   * The shared `ExpectedChanges` instance to distribute to every constructed
+   * `ProjectContext`. Optional so a standalone caller (e.g. a test) can omit
+   * it and get a private instance; `src/mcp/server.ts` always supplies its
+   * own module-level instance here, since that is also what its shared
+   * `purgeExpired` interval runs against — the two must be the same object
+   * for the interval to purge the registry it actually built.
+   */
+  expected?: ExpectedChanges;
   /** Forwarded to `resolveLocations`'s `mkTempDir` injection point (tests only). */
   mkTempDir?: () => string;
 }
@@ -191,7 +200,7 @@ export function buildRegistry(specs: ProjectSpec[], opts: BuildRegistryOptions):
     idOwner.set(id, i);
   });
 
-  const expected = new ExpectedChanges();
+  const expected = opts.expected ?? new ExpectedChanges();
   const configPathOwner = new Map<string, string>(); // configPath -> owning id
   const entries: Array<[string, ProjectContext]> = [];
 

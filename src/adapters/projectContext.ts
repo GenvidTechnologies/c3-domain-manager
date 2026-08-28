@@ -227,6 +227,18 @@ export class ProjectContext {
     this.#log("info", `domain-config.json updated (txId → ${this.#watcher.txId})`);
   }
 
+  // Called by the `regenerate` tool's orchestration (which stays in
+  // server.ts, per the class-level note above) immediately after a
+  // successful generateDomainIndex() run: records the freshly recomputed
+  // domain data as the new cache and clears domainDirty. Distinct from
+  // writeDomainConfig, which deliberately leaves domainDataCache stale (the
+  // mitigation there is appendStaleWarning/staleFooter, not a full flush) —
+  // this is the one path that actually is the refresh.
+  markRegenerated(data: ComputeDomainDataResult): void {
+    this.#domainDataCache = data;
+    this.#domainDirty = false;
+  }
+
   // onError hook for the mutate tools: a write that throws (e.g. a failed
   // fs.writeFileSync) leaves txId un-bumped while the on-disk file may have
   // changed — and the watcher swallows its own event via expectedChanges — so

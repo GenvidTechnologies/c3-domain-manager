@@ -9,7 +9,7 @@ import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides, listInertOverrides } from "./domain/domainAnalysis.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
 import { computeAddonInventory, formatAddonInventoryReport } from "./domain/addonInventory.js";
-import { resolveLocations, resolveProjectRoot } from "./adapters/locations.js";
+import { resolveLocations, resolveProjectRoot, buildRegistry } from "./adapters/locations.js";
 import { isMcpError } from "@genvidtech/mcp-utils";
 
 function resolveRootOrExit(projectDir: string | undefined): string {
@@ -37,9 +37,15 @@ yargs(hideBin(process.argv))
     () => {},
     async (argv) => {
       const projectRoot = resolveRootOrExit(argv["project-dir"] as string | undefined);
-      const loc = resolveLocations({ config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }, projectRoot);
-      const { startServer } = await import("./mcp/server.js");
-      await startServer(loc);
+      const { startServer, emitLog, expectedChanges } = await import("./mcp/server.js");
+      // Still single-project here: the repeatable --project flag (multiple
+      // specs in this array) is a later task. buildRegistry resolves the
+      // single spec the same way resolveLocations used to for this command.
+      const registry = buildRegistry(
+        [{ root: projectRoot, config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }],
+        { emit: emitLog, expected: expectedChanges },
+      );
+      await startServer(registry);
     },
   )
   .command(
