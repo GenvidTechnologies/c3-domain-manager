@@ -10,6 +10,8 @@ import { listUncategorized, listStaleOverrides, listInertOverrides } from "./dom
 import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
 import { computeAddonInventory, formatAddonInventoryReport } from "./domain/addonInventory.js";
 import { resolveLocations, resolveProjectRoot, buildRegistry } from "./adapters/locations.js";
+import type { ProjectSpec } from "./adapters/locations.js";
+import { buildServerProjectSpecs } from "./cliProjectFlags.js";
 import { isMcpError } from "@genvidtech/mcp-utils";
 
 function resolveRootOrExit(projectDir: string | undefined): string {
@@ -34,17 +36,32 @@ yargs(hideBin(process.argv))
   .command(
     "server",
     "Start the c3-domain-manager MCP server",
-    () => {},
+    (y) =>
+      y.option("project", {
+        type: "string",
+        array: true,
+        describe:
+          'Register a project for this server invocation, as "<id>=<path>" (explicit id) or a bare path ' +
+          "(id derived from the basename). Repeatable. When one or more are given, they define the registry " +
+          "entirely and --project-dir/C3_PROJECT_DIR/project.c3proj discovery (ADR 0007) do not apply. " +
+          "With more than one --project, --config/--extracted must be relative (rebased per project) or omitted.",
+      }),
     async (argv) => {
-      const projectRoot = resolveRootOrExit(argv["project-dir"] as string | undefined);
+      const projectValues = (argv.project as string[] | undefined) ?? [];
+      let specs: ProjectSpec[];
+      try {
+        specs = buildServerProjectSpecs({
+          projectValues,
+          resolveSingleRoot: () => resolveRootOrExit(argv["project-dir"] as string | undefined),
+          config: argv.config as string | undefined,
+          extracted: argv.extracted as string | undefined,
+        });
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
       const { startServer, emitLog, expectedChanges } = await import("./mcp/server.js");
-      // Still single-project here: the repeatable --project flag (multiple
-      // specs in this array) is a later task. buildRegistry resolves the
-      // single spec the same way resolveLocations used to for this command.
-      const registry = buildRegistry(
-        [{ root: projectRoot, config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }],
-        { emit: emitLog, expected: expectedChanges },
-      );
+      const registry = buildRegistry(specs, { emit: emitLog, expected: expectedChanges });
       await startServer(registry);
     },
   )
