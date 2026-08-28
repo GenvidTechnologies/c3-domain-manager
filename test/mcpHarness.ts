@@ -66,6 +66,17 @@ export interface HarnessOpts extends ProjectOpts {
    * is given), so supplying both here is a caller bug, not a supported mix.
    */
   projects?: Record<string, ProjectOpts>;
+  /**
+   * Forwarded verbatim as a single shared `--extracted <value>` CLI flag —
+   * mirrors the CLI's own shape (`buildServerProjectSpecs` attaches one
+   * `extracted` value to every project spec; there is no per-project
+   * override). Used by issue #77's L2 row to pass `NO_EXTRACTED` ("none") so
+   * every registered project gets its own ephemeral temp dir instead of the
+   * harness's usual pre-created `<root>/extracted/domain-index/`. Omitted
+   * (the default): no `--extracted` flag is passed at all, unchanged from
+   * before this option existed.
+   */
+  extracted?: string;
 }
 
 /** One captured `notifications/message` (logging) notification from the server. */
@@ -96,6 +107,15 @@ export interface Harness {
   stop(): Promise<void>;
   /** Captured child stderr so far (the server's banner + startup log lines). */
   stderr(): string;
+  /**
+   * The spawned child process's OS pid, or `null` before the transport has
+   * started (never the case once `startHarness` has resolved). Exposed so a
+   * test can signal the child directly (e.g. `process.kill(h.pid!,
+   * "SIGTERM")`) — issue #77's L2 row needs a real `SIGTERM`, distinct from
+   * `stop()`'s stdin-close-then-fallback path (see `Harness.stop`'s ordering
+   * note and L1's docstring for why the two are not interchangeable).
+   */
+  readonly pid: number | null;
 }
 
 interface Waiter {
@@ -178,6 +198,9 @@ export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
   }
   if (!multi) {
     serverArgs.push("--project-dir", roots["default"]);
+  }
+  if (opts.extracted !== undefined) {
+    serverArgs.push("--extracted", opts.extracted);
   }
 
   // The child's `--import tsx` resolves against ITS OWN cwd, so cwd must be
@@ -287,6 +310,9 @@ export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
     waitForNote,
     stop,
     stderr: () => Buffer.concat(stderrChunks).toString("utf-8"),
+    get pid() {
+      return transport.pid;
+    },
   };
 }
 
