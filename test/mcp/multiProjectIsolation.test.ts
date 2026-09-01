@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { assert } from "chai";
 import type { Harness } from "../mcpHarness.js";
-import { startHarness, assertOk, textOf } from "../mcpHarness.js";
+import { startHarness, assertOk, assertToolError, textOf, txCounterOf } from "../mcpHarness.js";
 import { makeConfig } from "../domainModel.js";
 import { deriveProjectId } from "../../src/adapters/locations.js";
 
@@ -579,6 +579,109 @@ describe("mcp server — multi-project integration (F1.5)", function () {
           }
         }
       }
+    });
+  });
+
+  /**
+   * F2.4 (issue #77): rows X4 (+ its X4-M mutation control), X5, X6 — the
+   * composite `<projectId>:<n>` txId token's cross-project semantics. Not
+   * part of F1.5's seven rows above; added once the wire moved off a bare
+   * integer onto the composite token (issue #77 rows X1-X3).
+   */
+  describe("X4/X5/X6: composite txId cross-project semantics", function () {
+    let h: Harness;
+
+    before(async function () {
+      this.timeout(30_000);
+      h = await startHarness({
+        projects: {
+          alpha: { config: makeConfig({ AlphaDomain: { description: "Alpha's domain" } }) },
+          beta: { config: makeConfig({ BetaDomain: { description: "Beta's domain" } }) },
+        },
+      });
+    });
+
+    after(async function () {
+      this.timeout(10_000);
+      await h?.stop();
+    });
+
+    it("X4: a well-formed token naming the WRONG project is rejected even when both projects' counters are numerically equal", async function () {
+      this.timeout(10_000);
+
+      // Drive both watchers to a non-zero, EQUAL counter with one self-write
+      // each, and assert the equality explicitly — a fresh harness's
+      // counters already start at 0 (also equal), which would make the
+      // precondition trivially true without proving anything was actually
+      // driven. See this describe block's own docstring: without this
+      // precondition, X4 is indistinguishable from a bare-integer
+      // implementation that happened to reject because the two counters
+      // simply differed.
+      const alphaCounter = txCounterOf(
+        await h.call("set-overrides", { project: "alpha", overrides: { "eventSheets/a.json": "AlphaDomain" } }),
+      );
+      const betaCounter = txCounterOf(
+        await h.call("set-overrides", { project: "beta", overrides: { "eventSheets/b.json": "BetaDomain" } }),
+      );
+      assert.strictEqual(
+        alphaCounter,
+        betaCounter,
+        "precondition: alpha's and beta's counters must be driven to the same value before the cross-project attempt below means anything",
+      );
+
+      const betaConfigBefore = fs.readFileSync(h.configPaths.beta, "utf-8");
+
+      // A composite token built from alpha's id but beta's own (numerically
+      // equal) counter — well-formed, and the counter half matches beta's
+      // real txId exactly. Only the projectId half is wrong.
+      const crossToken = `alpha:${alphaCounter}`;
+      const res = await h.call("set-overrides", {
+        project: "beta",
+        overrides: { "eventSheets/c.json": "BetaDomain" },
+        txId: crossToken,
+      });
+      const text = assertToolError(res, `State changed: expected txId ${crossToken}, got beta:${betaCounter}`);
+      assert.include(text, "alpha", `X4 error text did not name 'alpha' — ${text}`);
+      assert.include(text, "beta", `X4 error text did not name 'beta' — ${text}`);
+
+      const betaConfigAfter = fs.readFileSync(h.configPaths.beta, "utf-8");
+      assert.strictEqual(
+        betaConfigAfter,
+        betaConfigBefore,
+        "beta's domain-config.json must be byte-unchanged after the rejected cross-project write",
+      );
+    });
+
+    it("X5: an outstanding token for alpha survives an external mutation to beta (rules out a shared counter)", async function () {
+      this.timeout(10_000);
+      const alphaStateBefore = assertOk(await h.call("get-state", { project: "alpha" }));
+      const alphaCounterBefore = stateTxId(alphaStateBefore);
+      const alphaTokenBefore = `alpha:${alphaCounterBefore}`;
+
+      const betaExternalConfig = makeConfig({
+        BetaDomain: { description: "Beta's domain" },
+        DomainExternal: { description: "written outside the server" },
+      });
+      fs.writeFileSync(h.configPaths.beta, JSON.stringify(betaExternalConfig, null, "\t") + "\n", "utf-8");
+      await h.waitForNote(
+        (n) => n.level === "warning" && /^\[beta\] External change detected/.test(String(n.data)),
+      );
+
+      // alpha's token, captured before beta's external write, must still be
+      // ACCEPTED — a shared/global counter would have moved it out from
+      // under alpha the moment beta changed.
+      assertOk(
+        await h.call("set-overrides", {
+          project: "alpha",
+          overrides: { "eventSheets/d.json": "AlphaDomain" },
+          txId: alphaTokenBefore,
+        }),
+      );
+    });
+
+    it("X6: get-state emits the composite <projectId>:<n> token", async function () {
+      const text = assertOk(await h.call("get-state", { project: "beta" }));
+      assert.match(text, /^txId: beta:\d+$/m);
     });
   });
 });
