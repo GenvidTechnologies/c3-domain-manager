@@ -47,6 +47,10 @@ Resolution precedence (highest to lowest):
    for a `project.c3proj` marker. Exactly one match becomes the root; two or more
    matches print an ambiguity error and exit non-zero (the intended behaviour for
    a repo hosting multiple C3 projects).
+   **Superseded by [[0028-mcp-server-multi-project-support]] for the `server`
+   subcommand only: two or more matches now register every discovered root as a
+   separate project rather than erroring. The five single-root CLI subcommands
+   are unaffected and keep this item's ambiguity error exactly as written.**
 4. Fallback — the current working directory (preserves prior behaviour).
 
 The MCP server does **not** re-run discovery; the root is fixed at `startServer`
