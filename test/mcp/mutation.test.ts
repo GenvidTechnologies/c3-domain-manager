@@ -1,9 +1,10 @@
 import { assert } from "chai";
 import * as fs from "node:fs";
 import type { Harness } from "../mcpHarness.js";
-import { startHarness, assertOk, assertToolError, txIdOf, SELF_WRITE_OBSERVED_TXID_BUMPS } from "../mcpHarness.js";
+import { startHarness, assertOk, assertToolError, txCounterOf, txTokenOf, SELF_WRITE_OBSERVED_TXID_BUMPS } from "../mcpHarness.js";
 import { makeConfig } from "../domainModel.js";
 import type { DomainConfig } from "../../src/domain/types.js";
+import { deriveProjectId } from "../../src/adapters/locations.js";
 
 /**
  * Mutation-trajectory MCP tool suite (rows B2a, B2b, B3), plus the K3
@@ -12,15 +13,22 @@ import type { DomainConfig } from "../../src/domain/types.js";
  * Each describe block below owns its own harness, so a mutation's ordered,
  * monotonic txId trajectory is scoped to that one block and never crosses a
  * `describe` — no block depends on another's state.
+ *
+ * NOTE: this file must not import `parseTxToken`/`formatTxToken`/
+ * `compareTxToken` from `@genvidtech/mcp-utils` — see issue #77 row X7.
+ * Composite tokens are parsed here with this file's own regex (`stateTxId`)
+ * or via `mcpHarness.ts`'s own `txCounterOf`, never the shipped codec.
  */
 
 /**
- * `get-state`'s text is `txId: N\ndomainDirty: bool` — `domainDirty` is the
- * LAST line, so `txIdOf` (which anchors on the last line for the mutate
- * footer shape) doesn't apply here. Extract the `txId:` line directly.
+ * `get-state`'s text is `txId: <projectId>:<n>\ndomainDirty: bool` —
+ * `domainDirty` is the LAST line, so `txCounterOf` (which anchors on the
+ * last line for the mutate footer shape) doesn't apply here. Extract the
+ * `txId:` line directly and return its counter half, so it composes
+ * directly with `txCounterOf`'s return value in the comparisons below.
  */
 function stateTxId(text: string): number {
-  const match = /^txId: (\d+)$/m.exec(text);
+  const match = /^txId: [^\s:]+:(\d+)$/m.exec(text);
   if (!match) {
     assert.fail(`get-state text did not carry a txId line: ${JSON.stringify(text)}`);
   }
@@ -46,7 +54,7 @@ describe("mcp server — mutation trajectory", function () {
         overrides: { "eventSheets/alpha/x.json": "Domain0" },
       });
       assertOk(setRes);
-      const footerTxId = txIdOf(setRes);
+      const footerTxId = txCounterOf(setRes);
 
       const readRes = await h.call("read-domain-config", { section: "overrides" });
       const readText = assertOk(readRes);
@@ -100,10 +108,12 @@ describe("mcp server — mutation trajectory", function () {
 
   describe("B3: optimistic-concurrency txId rejection (platform-neutral)", function () {
     let h: Harness;
+    let id: string;
 
     before(async function () {
       this.timeout(30_000);
       h = await startHarness();
+      id = deriveProjectId(h.root);
       // Bump txId at least once before the stale-txId assertion — the row
       // only requires ">= 1 bump", not a specific starting value.
       assertOk(await h.call("set-overrides", { overrides: { "eventSheets/alpha/x.json": "Domain0" } }));
@@ -114,17 +124,35 @@ describe("mcp server — mutation trajectory", function () {
       await h?.stop();
     });
 
-    it("set-overrides with a deliberately stale txId 0 is rejected", async function () {
+    it("set-overrides with a well-formed but stale txId (right project, wrong counter) is rejected", async function () {
+      // A well-formed composite token — right project id, counter 0 — is
+      // stale under BOTH the broken and the fixed behaviour: the real
+      // counter is >= 1 either way after the before-hook's bump. That is
+      // what keeps this row valid on both platforms, unlike a test that
+      // passes back the handed-back token (see K3, which does that on
+      // purpose to encode the broken trajectory). A bare integer no longer
+      // reaches this check at all — see the schema-boundary case below,
+      // which used to be what this row (mis)tested before the composite
+      // token wire format landed.
+      const staleToken = `${id}:0`;
       const res = await h.call("set-overrides", {
         overrides: { "eventSheets/beta/y.json": "Domain0" },
+        txId: staleToken,
+      });
+      assertToolError(res, `State changed: expected txId ${staleToken}`);
+    });
+
+    it("set-overrides with a non-string txId is rejected at the schema boundary, before the concurrency check", async function () {
+      // A bare integer — the wire's old shape — fails zod's z.string()
+      // schema before compareTxToken ever runs. A different layer than the
+      // case above, which is why it is a separate assertion rather than
+      // folded into it: collapsing them would lose the concurrency coverage
+      // this row exists for.
+      const res = await h.call("set-overrides", {
+        overrides: { "eventSheets/gamma/z.json": "Domain0" },
         txId: 0,
       });
-      // txId 0 is stale under BOTH the broken and the fixed behaviour — the
-      // real txId is >= 1 either way after the before-hook's bump. That is
-      // what keeps this row valid on both platforms, unlike a test that
-      // passes back the handed-back txId (see K3, which does that on
-      // purpose to encode the broken trajectory).
-      assertToolError(res, "State changed: expected txId 0");
+      assertToolError(res, "Input validation error");
     });
   });
 
@@ -164,7 +192,8 @@ describe("mcp server — mutation trajectory", function () {
         overrides: { "eventSheets/alpha/x.json": "Domain0" },
       });
       assertOk(setRes);
-      const footerTxId = txIdOf(setRes);
+      const footerToken = txTokenOf(setRes);
+      const footerTxId = txCounterOf(setRes);
 
       // No spurious external-change warning for a write the server made
       // itself. Waiting for the absence costs the full deadline, which is
@@ -193,7 +222,7 @@ describe("mcp server — mutation trajectory", function () {
       // ACCEPTED. This previously failed on every write.
       const acceptRes = await h.call("set-overrides", {
         overrides: { "eventSheets/beta/y.json": "Domain0" },
-        txId: footerTxId,
+        txId: footerToken,
       });
       assertOk(acceptRes);
     });

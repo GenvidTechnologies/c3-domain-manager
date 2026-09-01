@@ -66,13 +66,35 @@ const PER_PROJECT_TOOLS = [
   "context-map",
 ];
 
-/** `get-state`'s text is `txId: N\ndomainDirty: bool` — extract the `txId:` line. */
+/**
+ * `get-state`'s text is `txId: <projectId>:<n>\ndomainDirty: bool` — extract
+ * the `txId:` line's counter half. Deliberately this file's own regex, not
+ * `@genvidtech/mcp-utils`'s `parseTxToken` — see issue #77 row X7.
+ */
 function stateTxId(text: string): number {
-  const match = /^txId: (\d+)$/m.exec(text);
+  const match = /^txId: [^\s:]+:(\d+)$/m.exec(text);
   if (!match) {
     assert.fail(`get-state text did not carry a txId line: ${JSON.stringify(text)}`);
   }
   return Number(match![1]);
+}
+
+/**
+ * Splits a mutate tool's response text into its body and the `projectId`
+ * half of its composite `txId:` footer token, anchored on the LAST line —
+ * same rule as `mcpHarness.ts`'s `txTokenOf`/`txCounterOf`, reimplemented
+ * here because those take a `CallToolResult`, not raw text. Deliberately
+ * this file's own regex, not `@genvidtech/mcp-utils`'s `parseTxToken` — see
+ * issue #77 row X7.
+ */
+function splitFooter(text: string): { body: string; projectId: string } {
+  const lines = text.split("\n");
+  const lastLine = lines[lines.length - 1] ?? "";
+  const match = /^txId: ([^\s:]+):(\d+)$/.exec(lastLine);
+  if (!match) {
+    assert.fail(`splitFooter: last line did not match /^txId: <id>:<n>$/ — got: ${JSON.stringify(lastLine)}`);
+  }
+  return { body: lines.slice(0, -1).join("\n"), projectId: match![1] };
 }
 
 /**
@@ -231,20 +253,72 @@ describe("mcp server — multi-project integration (F1.5)", function () {
         }
       });
 
-      it("set-overrides returns identical text across two freshly-built single-project harnesses, one omitted, one explicit", async function () {
+      it("set-overrides and remove-overrides return byte-identical bodies (footer excluded) across two freshly-built single-project harnesses, one omitted, one explicit — and each footer names its own project", async function () {
         this.timeout(30_000);
-        const config = makeConfig({ Domain0: { description: "Single synthetic domain" } });
-        const hA = await startHarness({ config });
-        const hB = await startHarness({ config });
-        try {
-          const idB = deriveProjectId(hB.root);
-          const overrides = { "eventSheets/x.json": "Domain0" };
-          const textA = textOf(await hA.call("set-overrides", { overrides }));
-          const textB = textOf(await hB.call("set-overrides", { overrides, project: idB }));
-          assert.strictEqual(textA, textB);
-        } finally {
-          await hA.stop();
-          await hB.stop();
+
+        // The two-fresh-harness shape is required (not a sequential pair on
+        // one harness) because neither mutate tool is idempotent — see the
+        // comment on the sibling `it` above. What changed here once the
+        // wire moved to a composite token: a whole-text comparison can never
+        // hold, because the token embeds each harness's own (random,
+        // temp-dir-derived) project id — so the footer line is excluded from
+        // the equality check, and its `projectId` half is instead pinned
+        // separately against each harness's own derived id (issue #77 row
+        // S2, amended).
+
+        // set-overrides
+        {
+          const config = makeConfig({ Domain0: { description: "Single synthetic domain" } });
+          const hA = await startHarness({ config });
+          const hB = await startHarness({ config });
+          try {
+            const idA = deriveProjectId(hA.root);
+            const idB = deriveProjectId(hB.root);
+            const overrides = { "eventSheets/x.json": "Domain0" };
+            const splitA = splitFooter(textOf(await hA.call("set-overrides", { overrides })));
+            const splitB = splitFooter(textOf(await hB.call("set-overrides", { overrides, project: idB })));
+            assert.strictEqual(
+              splitA.body,
+              splitB.body,
+              "set-overrides: bodies diverged once the txId footer is excluded",
+            );
+            assert.strictEqual(splitA.projectId, idA, "set-overrides: omitted-project footer did not name hA's own derived id");
+            assert.strictEqual(splitB.projectId, idB, "set-overrides: explicit-project footer did not name hB's own derived id");
+          } finally {
+            await hA.stop();
+            await hB.stop();
+          }
+        }
+
+        // remove-overrides — needs a pre-existing override to actually
+        // remove, so its response takes the mcpContent/footer branch rather
+        // than the footer-less "No overrides to remove." early return
+        // (already covered, footer-less, by the idempotent-tools `it`
+        // above).
+        {
+          const config = makeConfig(
+            { Domain0: { description: "Single synthetic domain" } },
+            { overrides: { "eventSheets/x.json": "Domain0" } },
+          );
+          const hA = await startHarness({ config });
+          const hB = await startHarness({ config });
+          try {
+            const idA = deriveProjectId(hA.root);
+            const idB = deriveProjectId(hB.root);
+            const paths = ["eventSheets/x.json"];
+            const splitA = splitFooter(textOf(await hA.call("remove-overrides", { paths })));
+            const splitB = splitFooter(textOf(await hB.call("remove-overrides", { paths, project: idB })));
+            assert.strictEqual(
+              splitA.body,
+              splitB.body,
+              "remove-overrides: bodies diverged once the txId footer is excluded",
+            );
+            assert.strictEqual(splitA.projectId, idA, "remove-overrides: omitted-project footer did not name hA's own derived id");
+            assert.strictEqual(splitB.projectId, idB, "remove-overrides: explicit-project footer did not name hB's own derived id");
+          } finally {
+            await hA.stop();
+            await hB.stop();
+          }
         }
       });
     });
@@ -305,7 +379,13 @@ describe("mcp server — multi-project integration (F1.5)", function () {
       assertOk(await h.call("read-domain-config", { project: "alpha" }));
       assertOk(await h.call("read-domain-config", { project: "beta" }));
 
-      const alphaTxIdBefore = stateTxId(assertOk(await h.call("get-state", { project: "alpha" })));
+      const alphaStateBefore = assertOk(await h.call("get-state", { project: "alpha" }));
+      const alphaTxIdBefore = stateTxId(alphaStateBefore);
+      // The composite token itself, for the accepted-write check in (iv) —
+      // built from the known project id rather than parsed back out of
+      // `alphaStateBefore`, since this file's own regex only extracts the
+      // counter half (see `stateTxId`'s docstring).
+      const alphaTxTokenBefore = `alpha:${alphaTxIdBefore}`;
 
       const betaExternalConfig = makeConfig({
         BetaDomain: { description: "Beta's domain" },
@@ -334,7 +414,7 @@ describe("mcp server — multi-project integration (F1.5)", function () {
         await h.call("set-overrides", {
           project: "alpha",
           overrides: { "eventSheets/x.json": "AlphaDomain" },
-          txId: alphaTxIdBefore,
+          txId: alphaTxTokenBefore,
         }),
       );
     });

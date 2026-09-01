@@ -341,20 +341,38 @@ export function assertToolError(res: CallToolResult, needle: string): string {
 }
 
 /**
- * Extracts the `txId` from a mutate tool's `mcpContent` footer. Anchors on
- * the LAST line specifically: the body above it can contain arbitrary
- * override file paths, and a loose `/txId: (\d+)/` search across the whole
- * text could match one of those instead of the actual footer.
+ * Anchors on the LAST line of a mutate tool's `mcpContent` footer: the body
+ * above it can contain arbitrary override file paths, and a loose search
+ * across the whole text could match one of those instead of the actual
+ * footer. Shared by `txTokenOf`/`txCounterOf` below.
+ *
+ * This is the harness's OWN regex — deliberately not
+ * `@genvidtech/mcp-utils`'s `parseTxToken`. Issue #77 row X7: importing the
+ * shipped codec here would reduce every txId assertion to "the codec agrees
+ * with itself," which proves nothing about the wire contract this repo
+ * actually depends on.
  */
-export function txIdOf(res: CallToolResult): number {
+function matchTxTokenLine(res: CallToolResult, caller: string): RegExpExecArray {
   const text = textOf(res);
   const lines = text.split("\n");
   const lastLine = lines[lines.length - 1] ?? "";
-  const match = /^txId: (\d+)$/.exec(lastLine);
+  const match = /^txId: ([^\s:]+):(\d+)$/.exec(lastLine);
   if (!match) {
-    assert.fail(`txIdOf: last line did not match /^txId: \\d+$/ — got: ${JSON.stringify(lastLine)}`);
+    assert.fail(`${caller}: last line did not match /^txId: <id>:<n>$/ — got: ${JSON.stringify(lastLine)}`);
   }
-  return Number(match[1]);
+  return match;
+}
+
+/** The full composite `<projectId>:<n>` token from a mutate tool's footer, e.g. `"alpha:3"`. */
+export function txTokenOf(res: CallToolResult): string {
+  const match = matchTxTokenLine(res, "txTokenOf");
+  return `${match[1]}:${match[2]}`;
+}
+
+/** The counter (`n`) half of a mutate tool's composite txId token — see `txTokenOf`. */
+export function txCounterOf(res: CallToolResult): number {
+  const match = matchTxTokenLine(res, "txCounterOf");
+  return Number(match[2]);
 }
 
 /**
