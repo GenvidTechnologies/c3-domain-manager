@@ -65,3 +65,34 @@ describe("mcp server — multi-project harness smoke test", function () {
     assert.notInclude(betaText, "AlphaDomain");
   });
 });
+
+/**
+ * Regression leg for issue #77's multi-root discovery adoption (row M5): the
+ * `server` handler's `resolveRoots` injection moved from `resolveRootOrExit`
+ * (wrapped in a one-element array) to `resolveRootsOrExit`, calling
+ * `resolveProjectRoots` under the hood. `startHarness()` with no `projects`
+ * option spawns via `--project-dir <root>` exactly as before — an `explicit`
+ * source, never `discovery` — so this proves that path still yields exactly
+ * one registered project through the new plural resolver.
+ */
+describe("mcp server — single-project registration is unaffected by multi-root discovery", function () {
+  let h: Harness;
+
+  before(async function () {
+    this.timeout(30_000);
+    h = await startHarness();
+  });
+
+  after(async function () {
+    this.timeout(10_000);
+    await h?.stop();
+  });
+
+  it("list-projects reports exactly one project, rooted at h.root", async function () {
+    const res = await h.call("list-projects", {});
+    const text = assertOk(res);
+    const lines = text.split("\n");
+    assert.lengthOf(lines, 1);
+    assert.equal(lines[0], `${lines[0].split(":")[0]}: ${h.root}`);
+  });
+});

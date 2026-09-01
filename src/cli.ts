@@ -9,7 +9,7 @@ import { generateDomainIndex, loadConfig } from "./domain/domainGenerator.js";
 import { listUncategorized, listStaleOverrides, listInertOverrides } from "./domain/domainAnalysis.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain/editorValidation.js";
 import { computeAddonInventory, formatAddonInventoryReport } from "./domain/addonInventory.js";
-import { resolveLocations, resolveProjectRoot, buildRegistry } from "./adapters/locations.js";
+import { resolveLocations, resolveProjectRoot, resolveProjectRoots, buildRegistry } from "./adapters/locations.js";
 import type { ProjectSpec } from "./adapters/locations.js";
 import { buildServerProjectSpecs } from "./cliProjectFlags.js";
 import { isMcpError } from "@genvidtech/mcp-utils";
@@ -25,6 +25,40 @@ function resolveRootOrExit(projectDir: string | undefined): string {
     process.exit(1);
   }
   return rooted.path;
+}
+
+/**
+ * Plural sibling of `resolveRootOrExit`, used only by the `server`
+ * subcommand's `resolveRoots` injection (`buildServerProjectSpecs`) — the
+ * only subcommand that can end up with more than one registered project. The
+ * five other subcommands stay on `resolveRootOrExit`, which they call
+ * directly and unmodified: each analyzes exactly one project root.
+ *
+ * Mirrors `resolveRootOrExit`'s print-and-exit-1 handling on an `mcpError`,
+ * plus one addition: when discovery finds no `project.c3proj` marker
+ * anywhere and falls back to `source: "cwd"`, this prints a warning naming
+ * that fallback. `resolveProjectRoots` stays side-effect-free (it never
+ * prints), so the warning lives here, alongside the rest of this file's
+ * `console.error`/`process.exit` handling — see `deriveUniqueProjectIds` for
+ * the `[c3-domain-manager] Warning:` prefix this reuses.
+ */
+function resolveRootsOrExit(projectDir: string | undefined): string[] {
+  const resolved = resolveProjectRoots({ projectDir });
+  if (isMcpError(resolved)) {
+    const msg = (resolved.content ?? [])
+      .map((c) => (typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : ""))
+      .join("\n")
+      .trim();
+    console.error(msg || "Failed to resolve project root.");
+    process.exit(1);
+  }
+  if (resolved.source === "cwd") {
+    console.error(
+      "[c3-domain-manager] Warning: no project.c3proj marker found (--project-dir/C3_PROJECT_DIR/discovery all came up empty) — " +
+        "falling back to the current directory as the sole registered project.",
+    );
+  }
+  return resolved.paths;
 }
 
 // Resolve this package's own package.json relative to the compiled module
@@ -52,7 +86,7 @@ yargs(hideBin(process.argv))
       try {
         specs = buildServerProjectSpecs({
           projectValues,
-          resolveRoots: () => [resolveRootOrExit(argv["project-dir"] as string | undefined)],
+          resolveRoots: () => resolveRootsOrExit(argv["project-dir"] as string | undefined),
           config: argv.config as string | undefined,
           extracted: argv.extracted as string | undefined,
         });

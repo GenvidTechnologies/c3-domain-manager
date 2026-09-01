@@ -1,7 +1,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { resolveRootFolder, ExpectedChanges, isValidProjectId, type ResolvedRoot } from "@genvidtech/mcp-utils";
+import {
+  resolveRootFolder,
+  resolveRootFolders,
+  ExpectedChanges,
+  isValidProjectId,
+  isMcpError,
+  type ResolvedRoot,
+  type ResolvedRoots,
+} from "@genvidtech/mcp-utils";
 import { PROJECT_MANIFEST_FILE } from "@genvidtech/c3source";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ProjectContext, type EmitFn } from "./projectContext.js";
@@ -74,6 +82,36 @@ export function resolveProjectRoot(
     { explicit: opts.projectDir, envVar: "C3_PROJECT_DIR", marker: PROJECT_MANIFEST_FILE, cwd },
     env,
   );
+}
+
+/**
+ * Plural sibling of `resolveProjectRoot` — a thin wrapper over mcp-utils'
+ * `resolveRootFolders`, passing `PROJECT_MANIFEST_FILE` as the discovery
+ * marker exactly as the singular does (issue #77's `server`-only multi-root
+ * discovery). Unlike the singular, ambiguous discovery (two or more sibling
+ * directories each containing the marker) is a **success** carrying every
+ * candidate, not an `mcpError` — see `resolveRootFolders`' own docs for the
+ * full precedence chain and never-throws contract.
+ *
+ * `resolveRootFolders` does not itself sort `paths` — matches are collected
+ * in `readdirSync` entry order, which is not a portable guarantee. This
+ * wrapper sorts them before returning, so registry order (and therefore
+ * `deriveUniqueProjectIds`'s collision-resolution order, downstream in
+ * `buildRegistry`) is deterministic regardless of filesystem/platform entry
+ * order. A no-op for `explicit`/`env`/`cwd`, which always resolve to exactly
+ * one path; only `source: "discovery"` can carry more than one.
+ */
+export function resolveProjectRoots(
+  opts: { projectDir?: string },
+  cwd: string = process.cwd(),
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedRoots | CallToolResult {
+  const result = resolveRootFolders(
+    { explicit: opts.projectDir, envVar: "C3_PROJECT_DIR", marker: PROJECT_MANIFEST_FILE, cwd },
+    env,
+  );
+  if (isMcpError(result)) return result;
+  return { ...result, paths: [...result.paths].sort() };
 }
 
 /**

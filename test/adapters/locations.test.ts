@@ -6,13 +6,15 @@ import * as os from "node:os";
 import {
   resolveLocations,
   resolveProjectRoot,
+  resolveProjectRoots,
   NO_EXTRACTED,
   deriveProjectId,
   deriveUniqueProjectIds,
   buildRegistry,
 } from "../../src/adapters/locations.js";
-import { ExpectedChanges, isMcpError } from "@genvidtech/mcp-utils";
+import { ExpectedChanges, isMcpError, type ResolvedRoot, type ResolvedRoots } from "@genvidtech/mcp-utils";
 import { makeTempDir, removeTempDir } from "../syntheticProject.js";
+import { buildServerProjectSpecs } from "../../src/cliProjectFlags.js";
 import type { EmitFn } from "../../src/adapters/projectContext.js";
 
 const noopEmit: EmitFn = () => {};
@@ -264,6 +266,188 @@ describe("resolveProjectRoot", () => {
 
     const result = resolveProjectRoot({}, tmpDir, {});
     assert.isTrue(isMcpError(result));
+  });
+});
+
+describe("resolveProjectRoots", () => {
+  let tmpDir: string | undefined;
+
+  afterEach(() => {
+    if (tmpDir) {
+      removeTempDir(tmpDir);
+      tmpDir = undefined;
+    }
+  });
+
+  // M5: single-marker discovery agrees with the singular resolver's own result.
+  it("single child marker: one path, equal to resolveProjectRoot's own result, both source: discovery", () => {
+    tmpDir = makeTempDir("c3dm-prs-single-");
+    const childDir = path.join(tmpDir, "myproject");
+    fs.mkdirSync(childDir);
+    fs.writeFileSync(path.join(childDir, "project.c3proj"), "");
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const pluralResolved = plural as ResolvedRoots;
+    assert.equal(pluralResolved.paths.length, 1);
+    assert.equal(pluralResolved.source, "discovery");
+
+    const singular = resolveProjectRoot({}, tmpDir, {});
+    assert.isFalse(isMcpError(singular));
+    const singularResolved = singular as ResolvedRoot;
+    assert.equal(singularResolved.source, "discovery");
+    assert.equal(pluralResolved.paths[0], singularResolved.path);
+  });
+
+  // M4: three sibling markers succeed as a discovery set, feed buildRegistry
+  // and buildServerProjectSpecs cleanly, while the singular still errors on
+  // the identical directory (positive control proving genuine divergence).
+  it("three sibling markers: plural succeeds with 3 paths; singular still errors (ambiguous); flows through buildRegistry and buildServerProjectSpecs", () => {
+    tmpDir = makeTempDir("c3dm-prs-triple-");
+    for (const name of ["alpha", "beta", "gamma"]) {
+      const child = path.join(tmpDir, name);
+      fs.mkdirSync(child);
+      fs.writeFileSync(path.join(child, "project.c3proj"), "");
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const pluralResolved = plural as ResolvedRoots;
+    assert.equal(pluralResolved.source, "discovery");
+    assert.equal(pluralResolved.paths.length, 3);
+
+    // Positive control on the identical directory: the singular still errors.
+    const singular = resolveProjectRoot({}, tmpDir, {});
+    assert.isTrue(isMcpError(singular));
+
+    const registry = buildRegistry(
+      pluralResolved.paths.map((root) => ({ root })),
+      { emit: noopEmit },
+    );
+    assert.equal(registry.ids().length, 3);
+    assert.equal(new Set(registry.ids()).size, 3);
+
+    const specs = buildServerProjectSpecs({
+      projectValues: [],
+      resolveRoots: () => pluralResolved.paths,
+      config: undefined,
+      extracted: undefined,
+    });
+    assert.equal(specs.length, 3);
+  });
+
+  // M7: ascending sort regardless of directory-creation/readdir order.
+  it("sorts discovered paths ascending regardless of creation order", () => {
+    tmpDir = makeTempDir("c3dm-prs-order-");
+    for (const name of ["c", "a", "b"]) {
+      const child = path.join(tmpDir, name);
+      fs.mkdirSync(child);
+      fs.writeFileSync(path.join(child, "project.c3proj"), "");
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const paths = (plural as ResolvedRoots).paths;
+    const expectedSorted = [...paths].sort();
+    assert.deepEqual(paths, expectedSorted);
+
+    const registry = buildRegistry(
+      paths.map((root) => ({ root })),
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["a", "b", "c"]);
+  });
+
+  // M8 (registry half — the stderr-warning half is CLI-only and covered by
+  // test/mcp/rootFallbackWarning.test.ts, which spawns the real CLI): 0
+  // markers under cwd falls back to source: "cwd" with exactly one path,
+  // unchanged from resolveProjectRoot's own cwd fallback.
+  it("0 markers under cwd: falls back to source: cwd with exactly one path", () => {
+    tmpDir = makeTempDir("c3dm-prs-cwd-");
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const pluralResolved = plural as ResolvedRoots;
+    assert.equal(pluralResolved.source, "cwd");
+    assert.deepEqual(pluralResolved.paths, [tmpDir]);
+
+    const registry = buildRegistry(
+      pluralResolved.paths.map((root) => ({ root })),
+      { emit: noopEmit },
+    );
+    assert.equal(registry.ids().length, 1);
+  });
+
+  // M6: three immediate siblings have distinct basenames at searchDepth 1, so
+  // the -2 collision branch must not fire and no warning is emitted.
+  it("three sibling discovered roots derive three unsuffixed lowercase ids, no collision warning", () => {
+    tmpDir = makeTempDir("c3dm-prs-noclash-");
+    for (const name of ["Alpha", "Beta", "Gamma"]) {
+      const child = path.join(tmpDir, name);
+      fs.mkdirSync(child);
+      fs.writeFileSync(path.join(child, "project.c3proj"), "");
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const paths = (plural as ResolvedRoots).paths;
+    assert.equal(paths.length, 3);
+
+    const { result: registry, messages } = captureConsoleError(() =>
+      buildRegistry(
+        paths.map((root) => ({ root })),
+        { emit: noopEmit },
+      ),
+    );
+    assert.deepEqual(registry.ids(), ["alpha", "beta", "gamma"]);
+    assert.isEmpty(messages);
+  });
+
+  // M6 case-collision leg: `Game/` + `game/` colliding to one id (`game`,
+  // `game-2`) plus the warning — gated on OBSERVING that both directories
+  // actually persisted as distinct entries, never on process.platform. On a
+  // filesystem that folds the two names (case-insensitive), the second
+  // mkdirSync either throws EEXIST or silently lands on the same inode, so
+  // this probes both directly rather than inferring from the OS.
+  it("case-collision leg: Game/ + game/ collide to game/game-2 with a warning, when this filesystem actually keeps both", () => {
+    tmpDir = makeTempDir("c3dm-prs-case-");
+    const dirUpper = path.join(tmpDir, "Game");
+    fs.mkdirSync(dirUpper);
+    fs.writeFileSync(path.join(dirUpper, "project.c3proj"), "");
+
+    const dirLower = path.join(tmpDir, "game");
+    let bothCreated = true;
+    try {
+      fs.mkdirSync(dirLower);
+      fs.writeFileSync(path.join(dirLower, "project.c3proj"), "");
+    } catch {
+      bothCreated = false;
+    }
+
+    const entries = fs.readdirSync(tmpDir);
+    if (!bothCreated || entries.length < 2) {
+      // console.warn, not .log/.debug: test/setup.ts silences the latter two.
+      console.warn(
+        `case-collision leg skipped — this filesystem folds 'Game' and 'game' into one entry (entries: ${JSON.stringify(entries)})`,
+      );
+      return;
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const paths = (plural as ResolvedRoots).paths;
+    assert.equal(paths.length, 2);
+
+    const { result: registry, messages } = captureConsoleError(() =>
+      buildRegistry(
+        paths.map((root) => ({ root })),
+        { emit: noopEmit },
+      ),
+    );
+    assert.deepEqual(registry.ids(), ["game", "game-2"]);
+    assert.isTrue(
+      messages.some((m) => m.includes("game")),
+      `expected a stderr warning naming the 'game' collision, got: ${JSON.stringify(messages)}`,
+    );
   });
 });
 
