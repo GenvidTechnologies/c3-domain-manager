@@ -52,12 +52,20 @@ export function assertRelativeOverride(
  * `--project` flag plus the shared `--config`/`--extracted` overrides.
  *
  * When one or more `--project` values are given, they define the registry
- * entirely: each is parsed via `parseProjectFlagValue` and `resolveSingleRoot`
+ * entirely: each is parsed via `parseProjectFlagValue` and `resolveRoots`
  * is never called, so the ADR 0007 `--project-dir`/`C3_PROJECT_DIR`/
  * `project.c3proj`-discovery chain — which can exit the process on failure —
  * is not invoked when the caller has already named explicit roots.
- * Otherwise a single spec is built around `resolveSingleRoot()`'s result
- * (that chain), unchanged from before this flag existed.
+ * Otherwise one spec is built per root returned by `resolveRoots()` (that
+ * chain); today it always returns exactly one root, unchanged from before
+ * this flag existed, but the seam is shaped to let a future caller return
+ * more than one (multi-root auto-discovery). The parameter is named
+ * `resolveRoots`, not `resolveSingleRoot` with a widened `string | string[]`
+ * return, deliberately: a name promising a single root that can silently
+ * return several is exactly the kind of stale-but-undetected name this repo
+ * has been bitten by before (see `emitsDirectories`, ADR 0020, and the
+ * retired `SECTION_SOURCE_EXTENSIONS` in CLAUDE.md) — nothing here would
+ * catch the mismatch, so the rename is the cheaper, permanent fix.
  *
  * `config`/`extracted` are attached to every spec verbatim; `buildRegistry`
  * -> `resolveLocations` rebases a relative value against each spec's own
@@ -67,13 +75,13 @@ export function assertRelativeOverride(
  */
 export function buildServerProjectSpecs(opts: {
   projectValues: string[];
-  resolveSingleRoot: () => string;
+  resolveRoots: () => string[];
   config?: string;
   extracted?: string;
 }): ProjectSpec[] {
-  const { projectValues, resolveSingleRoot, config, extracted } = opts;
+  const { projectValues, resolveRoots, config, extracted } = opts;
   if (projectValues.length === 0) {
-    return [{ root: resolveSingleRoot(), config, extracted }];
+    return resolveRoots().map((root) => ({ root, config, extracted }));
   }
   assertRelativeOverride("config", config, projectValues.length);
   assertRelativeOverride("extracted", extracted, projectValues.length);

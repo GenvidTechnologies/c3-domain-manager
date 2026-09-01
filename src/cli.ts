@@ -52,7 +52,7 @@ yargs(hideBin(process.argv))
       try {
         specs = buildServerProjectSpecs({
           projectValues,
-          resolveSingleRoot: () => resolveRootOrExit(argv["project-dir"] as string | undefined),
+          resolveRoots: () => [resolveRootOrExit(argv["project-dir"] as string | undefined)],
           config: argv.config as string | undefined,
           extracted: argv.extracted as string | undefined,
         });

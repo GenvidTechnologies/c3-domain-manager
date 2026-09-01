@@ -70,13 +70,13 @@ describe("assertRelativeOverride", () => {
 });
 
 describe("buildServerProjectSpecs", () => {
-  it("builds two specs from two --project values, never calling resolveSingleRoot", () => {
+  it("builds two specs from two --project values, never calling resolveRoots", () => {
     let calls = 0;
     const specs = buildServerProjectSpecs({
       projectValues: ["alpha=../game-a", "beta=../game-b"],
-      resolveSingleRoot: () => {
+      resolveRoots: () => {
         calls++;
-        return "/should-not-be-used";
+        return ["/should-not-be-used"];
       },
       config: undefined,
       extracted: undefined,
@@ -93,7 +93,7 @@ describe("buildServerProjectSpecs", () => {
     const rootB = path.join(os.tmpdir(), "c3dm-cli-flag-b", "game-b");
     const specs = buildServerProjectSpecs({
       projectValues: [`alpha=${rootA}`, `beta=${rootB}`],
-      resolveSingleRoot: () => {
+      resolveRoots: () => {
         throw new Error("should not be called");
       },
       config: undefined,
@@ -107,7 +107,7 @@ describe("buildServerProjectSpecs", () => {
     const root = path.join(os.tmpdir(), "c3dm-cli-flag-bare", "game-c");
     const specs = buildServerProjectSpecs({
       projectValues: [root],
-      resolveSingleRoot: () => {
+      resolveRoots: () => {
         throw new Error("should not be called");
       },
       config: undefined,
@@ -118,14 +118,14 @@ describe("buildServerProjectSpecs", () => {
     assert.deepEqual(registry.ids(), ["game-c"]);
   });
 
-  it("with no --project values, builds a single spec around resolveSingleRoot()'s result", () => {
+  it("with no --project values, builds a single spec around resolveRoots()'s result", () => {
     const root = path.join(os.tmpdir(), "c3dm-cli-flag-single", "game-d");
     let calls = 0;
     const specs = buildServerProjectSpecs({
       projectValues: [],
-      resolveSingleRoot: () => {
+      resolveRoots: () => {
         calls++;
-        return root;
+        return [root];
       },
       config: undefined,
       extracted: undefined,
@@ -142,7 +142,7 @@ describe("buildServerProjectSpecs", () => {
       () =>
         buildServerProjectSpecs({
           projectValues: ["alpha=../game-a", "beta=../game-b"],
-          resolveSingleRoot: () => {
+          resolveRoots: () => {
             throw new Error("should not be called");
           },
           config: abs,
@@ -155,7 +155,7 @@ describe("buildServerProjectSpecs", () => {
   it("accepts a relative --config when more than one --project is given, applied to every spec", () => {
     const specs = buildServerProjectSpecs({
       projectValues: ["alpha=../game-a", "beta=../game-b"],
-      resolveSingleRoot: () => {
+      resolveRoots: () => {
         throw new Error("should not be called");
       },
       config: "sub/domain-config.json",
@@ -172,7 +172,7 @@ describe("buildServerProjectSpecs", () => {
     const abs = path.resolve(os.tmpdir(), "abs-config.json");
     const specs = buildServerProjectSpecs({
       projectValues: [],
-      resolveSingleRoot: () => root,
+      resolveRoots: () => [root],
       config: abs,
       extracted: undefined,
     });
