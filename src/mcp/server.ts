@@ -4,7 +4,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
+import { ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, formatTxToken, compareTxToken, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
 import type { Logger } from "@genvidtech/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
@@ -289,16 +289,16 @@ registerProjectTool(
     inputSchema: {
       overrides: z.record(z.string(), z.string())
         .describe("File path → domain/subdomain name"),
-      txId: z.number().optional()
-        .describe("Expected txId for optimistic concurrency — rejected if stale"),
+      txId: z.string().optional()
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
     },
   },
   "write",
   async (ctx, { overrides: newOverrides, txId: expectedTxId }) =>
     withMcpErrors(async (): Promise<CallToolResult> => {
-      if (expectedTxId !== undefined && expectedTxId !== ctx.watcher.txId) {
+      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
         return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${ctx.watcher.txId}. Re-read state and retry.` }],
+          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
           isError: true,
         };
       }
@@ -329,7 +329,7 @@ registerProjectTool(
       const parts: string[] = [];
       if (added.length > 0) parts.push(`Added ${added.length}:\n${added.join("\n")}`);
       if (updated.length > 0) parts.push(`Updated ${updated.length}:\n${updated.join("\n")}`);
-      return mcpContent(parts.join("\n\n"), `txId: ${ctx.watcher.txId}`);
+      return mcpContent(parts.join("\n\n"), `txId: ${formatTxToken(ctx.id, ctx.watcher.txId)}`);
     }, { onError: ctx.onWriteError })(),
 );
 
@@ -344,16 +344,16 @@ registerProjectTool(
     inputSchema: {
       paths: z.array(z.string())
         .describe("File paths to remove from overrides"),
-      txId: z.number().optional()
-        .describe("Expected txId for optimistic concurrency — rejected if stale"),
+      txId: z.string().optional()
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
     },
   },
   "write",
   async (ctx, { paths, txId: expectedTxId }) =>
     withMcpErrors(async (): Promise<CallToolResult> => {
-      if (expectedTxId !== undefined && expectedTxId !== ctx.watcher.txId) {
+      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
         return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${ctx.watcher.txId}. Re-read state and retry.` }],
+          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
           isError: true,
         };
       }
@@ -373,7 +373,7 @@ registerProjectTool(
         return { content: [{ type: "text", text: "None of the specified paths were in overrides." }] };
       }
       ctx.writeDomainConfig(config);
-      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${ctx.watcher.txId}`);
+      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${formatTxToken(ctx.id, ctx.watcher.txId)}`);
     }, { onError: ctx.onWriteError })(),
 );
 
@@ -421,7 +421,7 @@ registerProjectTool(
   "read",
   async (ctx) => {
     return {
-      content: [{ type: "text", text: `txId: ${ctx.watcher.txId}\ndomainDirty: ${ctx.domainDirty}` }],
+      content: [{ type: "text", text: `txId: ${formatTxToken(ctx.id, ctx.watcher.txId)}\ndomainDirty: ${ctx.domainDirty}` }],
     };
   },
 );

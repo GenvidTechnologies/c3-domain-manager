@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { resolveRootFolder, ExpectedChanges, type ResolvedRoot } from "@genvidtech/mcp-utils";
+import { resolveRootFolder, ExpectedChanges, isValidProjectId, type ResolvedRoot } from "@genvidtech/mcp-utils";
 import { PROJECT_MANIFEST_FILE } from "@genvidtech/c3source";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ProjectContext, type EmitFn } from "./projectContext.js";
@@ -85,11 +85,12 @@ export function resolveProjectRoot(
  * agent driving both MCP servers over the same roots sees the same ids from
  * each.
  *
- * Deliberately does NOT reject a colon or any other character in the
+ * Deliberately does NOT itself reject a colon or any other character in the
  * result — that validation is `isValidProjectId`, requested upstream in
- * `GenvidTechnologies/mcp-utils#19` and not yet released. It is adopted in a
- * later task alongside the composite txId codec (issue #77, ADR 0028); no
- * local substitute belongs here.
+ * `GenvidTechnologies/mcp-utils#19` and shipped in 0.9.0. It is applied to
+ * every derived (and explicit) id at `buildRegistry` construction time
+ * below, alongside the composite txId codec (issue #77, ADR 0028), not here:
+ * this function's contract is a pure string transform, not a validator.
  */
 export function deriveProjectId(root: string): string {
   return path.basename(root).trim().toLowerCase().replace(/\s+/g, "-");
@@ -163,9 +164,11 @@ export interface BuildRegistryOptions {
  * duplicate-`configPath` guard below meaningful) — and returns a populated
  * `ProjectRegistry`.
  *
- * Performs exactly two validations here (issue #77 acceptance row S4); a
- * third — rejecting a colon in an id — lands in a later task once
- * `isValidProjectId` ships upstream (see `deriveProjectId`'s note):
+ * Performs exactly three validations here (issue #77 acceptance row S4):
+ *   - every id (derived or explicit) is checked against `isValidProjectId`
+ *     and rejected if invalid — in practice this means it contains a colon
+ *     (which would collide with the composite txId token's `<projectId>:<n>`
+ *     separator), whitespace, or is empty; see `deriveProjectId`'s note.
  *   - duplicate ids (after derivation) are rejected.
  *   - duplicate `configPath`s are rejected, naming both projects' ids. This
  *     is the case that actually arises in practice: two `--project` entries
@@ -190,6 +193,15 @@ export function buildRegistry(specs: ProjectSpec[], opts: BuildRegistryOptions):
   needsDerivation.forEach((specIndex, k) => {
     ids[specIndex] = derivedIds[k];
   });
+
+  for (const id of ids) {
+    if (!isValidProjectId(id)) {
+      throw new Error(
+        `invalid project id '${id}': must be non-empty, with no ':' and no whitespace ` +
+          `(':' collides with the composite txId token's '<projectId>:<n>' separator)`,
+      );
+    }
+  }
 
   const idOwner = new Map<string, number>(); // id -> owning spec index
   ids.forEach((id, i) => {
