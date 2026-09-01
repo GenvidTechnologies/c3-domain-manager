@@ -95,6 +95,7 @@ Run any subcommand with `--help` for full usage.
 | `list-uncategorized` | List files/directories not mapped to any domain — the worklist for `generate`'s output |
 | `list-stale-overrides` | List override entries pointing to non-existent files, plus inert entries no enumeration can ever produce |
 | `validate-editor` | Report event sheets the C3 editor would reject (editor-strictness validation) |
+| `addon-inventory` | Report project-wide addon usage: declared-but-unused and used-but-undeclared addons |
 | `server` | Start the MCP server (stdio transport) |
 
 All subcommands share three global options:
@@ -105,11 +106,17 @@ All subcommands share three global options:
 | `--config <path>` | `<project-root>/domain-config.json` | Path to `domain-config.json`. Relative paths resolve from the project root. |
 | `--extracted <path>` | `<project-root>/extracted` | Output directory for the generated domain index. Pass `none` for an ephemeral temp dir auto-cleaned on exit. |
 
-See [wiki/reference/domain-architecture.md](wiki/reference/domain-architecture.md#paths-and-locations) for the full `--project-dir` resolution precedence (flag > `C3_PROJECT_DIR` > `project.c3proj` discovery > cwd).
+`server` additionally accepts a repeatable option, not shared by the other five subcommands:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--project <id>=<path>` | none (falls back to `--project-dir`/discovery) | Register a project for this server invocation, as `<id>=<path>` (explicit id) or a bare path (id derived from the basename). Repeatable — pass it once per project to host several C3 projects in one server. When one or more are given, they define the registry entirely and `--project-dir`/`C3_PROJECT_DIR`/`project.c3proj` discovery do not apply. With more than one `--project`, `--config`/`--extracted` must be relative (rebased per project) or omitted. |
+
+With neither `--project` nor `--project-dir`, `server` registers **every** discovered `project.c3proj` root instead of erroring on ambiguity — the five non-`server` subcommands still error when discovery finds two or more roots. See [wiki/reference/domain-architecture.md](wiki/reference/domain-architecture.md#paths-and-locations) for the full `--project-dir` resolution precedence (flag > `C3_PROJECT_DIR` > `project.c3proj` discovery > cwd).
 
 ## MCP server
 
-The MCP server exposes 13 tools over stdio, suitable for use with Claude or any MCP-compatible client.
+The MCP server exposes 15 tools over stdio, suitable for use with Claude or any MCP-compatible client. It can host more than one Construct 3 project in a single server process (see `--project` above) — every tool below except `list-projects` accepts an optional `project` selector naming which registered project to target; omitted, it resolves to the sole registered project when exactly one is registered, and returns an error listing the known ids when more than one is.
 
 ### Starting the server
 
@@ -149,6 +156,8 @@ The server auto-generates the domain index on startup if `extracted/domain-index
 | `domain-health` | Compute Ca, Ce, and instability metrics per domain. |
 | `context-map` | Generate a context map in `text` or `mermaid` format. |
 | `validate-editor` | Report event sheets the C3 editor would reject. Re-walks sheets fresh from disk; never reads the cached domain index. |
+| `addon-inventory` | Report project-wide addon usage: declared-but-unused and used-but-undeclared addons. Derives attribution fresh from disk; never reads the cached domain index. |
+| `list-projects` | List every registered project's id and resolved root. The one tool exempt from the `project` selector — use it to discover which id to pass to every other tool. |
 
 **Mutate tools** (modify `domain-config.json`)
 
@@ -169,7 +178,7 @@ If `domain-config.json` changes while the server is running, mutate tools mark t
 
 ### Optimistic concurrency
 
-`set-overrides` and `remove-overrides` accept an optional `txId`. If provided, the write is rejected when the server's current `txId` does not match. Use `get-state` to read the current `txId` before a write sequence.
+`set-overrides` and `remove-overrides` accept an optional `txId`. If provided, the write is rejected when the server's current `txId` does not match. Use `get-state` to read the current `txId` before a write sequence. `txId` is a composite `<projectId>:<n>` string (e.g. `game-a:3`), not a bare integer — it carries which registered project the counter belongs to.
 
 ## Library API
 
