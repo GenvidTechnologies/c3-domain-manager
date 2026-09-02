@@ -43,6 +43,7 @@ and maintenance rules.
 ## Documentation Practice
 
 - [How a summary silently diverges from the record it summarizes](documentation-drift-modes.md) — Three distinct shapes of documentation drift measured in this repo's ADR history — a gloss that inverts a decision, a sibling ADR misattributing a mechanism, and a framing sentence that sends work down a premise the records themselves deny — and what checkable action closes each.
+- [How a pre-committed acceptance criterion is wrong before anyone runs it](acceptance-criteria-failure-modes.md) — Three shapes of defect measured across 62 pre-committed criteria on one issue — a row that grades green on an untouched checkout, a row whose corpus is narrower than the property it protects, and a row falsified by a later task in its own plan — plus the coverage gap none of them can expose, and which reader catches which.
 
 ## Decision Records
 

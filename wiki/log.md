@@ -14,6 +14,25 @@ the append-only guarantee holds exactly as before. If a past entry itself needs
 correcting, add a new entry that says so; never edit or remove the old one in
 place. See `wiki/schema.md` for the full maintenance schema.
 
+## 2026-09-02
+
+- Ingested **acceptance-criteria-failure-modes.md** — three shapes of defective
+  pre-committed criterion, measured across the 62 rows pledged on
+  [issue #77](https://github.com/GenvidTechnologies/c3-domain-manager/issues/77):
+  a row vacuous from birth (its true baseline already satisfied its threshold),
+  a row whose corpus named files rather than stating its rule so a later file
+  escaped it, and a row falsified by a later task in its own plan. Adds the
+  fourth failure a whole-table screen structurally cannot see — a real,
+  implemented rule with no covering row, found only by a code review reading
+  the code rather than the checklist. Sources: issue #77's eight inline
+  correction records, [ADR 0028](decisions/0028-mcp-server-multi-project-support.md),
+  and [ADR 0026](decisions/0026-fs-watch-platform-confound-and-upstream-routing.md)
+  for the observation-gate asymmetry it generalizes.
+- Repointed eight dead links in this log from the retired `docs/decisions/`
+  path to `decisions/`. They were link targets rather than history named in
+  prose, so repointing preserves what each entry claims while making the
+  citation resolve; no entry text was altered.
+
 ## 2026-08-25
 
 * **Relocation**: `docs/` was retired entirely and folded into this bundle
@@ -30,23 +49,23 @@ place. See `wiki/schema.md` for the full maintenance schema.
 * **Creation**: `fs-watch-platform-behaviour.md` — first ingest of the wiki.
   No `raw/` capture drove this page (this run's sources are in-repo ADRs and
   GitHub issues, cited directly rather than snapshotted); drawn from
-  [ADR 0026](../docs/decisions/0026-fs-watch-platform-confound-and-upstream-routing.md)
-  and [ADR 0025](../docs/decisions/0025-mcp-server-stdio-test-harness.md),
+  [ADR 0026](decisions/0026-fs-watch-platform-confound-and-upstream-routing.md)
+  and [ADR 0025](decisions/0025-mcp-server-stdio-test-harness.md),
   plus issues #67, #68, #70.
 * **Creation**: `upstream-dependency-routing.md` — first ingest. Drawn from
-  [ADR 0026](../docs/decisions/0026-fs-watch-platform-confound-and-upstream-routing.md)
+  [ADR 0026](decisions/0026-fs-watch-platform-confound-and-upstream-routing.md)
   (the mcp-utils#12 routing and 0.7.0 adoption) and
-  [ADR 0021](../docs/decisions/0021-decline-drift-diagnostic.md) /
-  [ADR 0022](../docs/decisions/0022-section-extension-provenance.md) (the
+  [ADR 0021](decisions/0021-decline-drift-diagnostic.md) /
+  [ADR 0022](decisions/0022-section-extension-provenance.md) (the
   c3source `#73`/`#76` deletion-trigger-vs-prompt pattern), plus issues #68,
   #70, #48, #60.
 * **Creation**: `documentation-drift-modes.md` — first ingest. Drawn from
-  [ADR 0022](../docs/decisions/0022-section-extension-provenance.md) (a gloss
+  [ADR 0022](decisions/0022-section-extension-provenance.md) (a gloss
   that inverted ADR 0020's own decision, caught by grep),
-  [ADR 0023](../docs/decisions/0023-decline-stray-file-diagnostic.md) (the
+  [ADR 0023](decisions/0023-decline-stray-file-diagnostic.md) (the
   record that stayed clean of the misattribution ADR 0024 later found in
   ADR 0022), and
-  [ADR 0024](../docs/decisions/0024-editor-validation-single-enumeration.md)
+  [ADR 0024](decisions/0024-editor-validation-single-enumeration.md)
   (both the sibling-ADR misattribution and the framing sentence that opened
   issue #37 on a premise three accepted records deny), plus issues #60, #62,
   #37.
