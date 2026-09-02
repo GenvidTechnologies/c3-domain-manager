@@ -4,13 +4,11 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ReadWriteLock, ExpectedChanges, OptimisticWatcher, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
+import { ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, formatTxToken, compareTxToken, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
 import type { Logger } from "@genvidtech/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
 import type { DomainConfig } from "../domain/types.js";
-import { DomainConfigSchema } from "../domain/types.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { collectGlossary, findCollisions, formatGlossaryReport } from "../domain/glossary.js";
 import { validateBoundaries, formatBoundaryReport } from "../domain/relationships.js";
 import { validateEditorStrictness, formatEditorStrictnessReport } from "../domain/editorValidation.js";
@@ -27,21 +25,15 @@ import {
   validateOverrideValues,
 } from "../domain/domainAnalysis.js";
 import { generateDomainIndex, computeDomainData } from "../domain/domainGenerator.js";
-import type { ComputeDomainDataResult } from "../domain/domainGenerator.js";
-import { resolveLocations } from "../adapters/locations.js";
-import type { ResolvedLocations } from "../adapters/locations.js";
+import { resolveLocations, buildRegistry } from "../adapters/locations.js";
+import { ProjectContext } from "../adapters/projectContext.js";
+import { ProjectRegistry } from "../adapters/projectRegistry.js";
+import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import type { ShapeOutput } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 
-// Assigned by startServer() from resolveLocations(), before any transport is
-// connected and therefore before any registered tool callback can be dispatched.
-// The explicit annotations are load-bearing: with no initializer there is nothing
-// to infer from, so omitting them yields `any` and trips --max-warnings 0.
-let PROJECT_ROOT: string;
-let EXTRACTED_DIR: string;
-let CONFIG_PATH: string;
-let CONFIG_DIR: string;
-let CONFIG_FILENAME: string;
-let CONFIG_WATCH_KEY: string;
-let EXTRACTED_EPHEMERAL: boolean;
+// Assigned by startServer() before any transport is connected and therefore
+// before any registered tool callback can be dispatched (ADR 0025 L3).
+let REGISTRY: ProjectRegistry<ProjectContext>;
 
 const server = new McpServer(
   { name: "c3-domain-manager", version: "1.0.0" },
@@ -58,32 +50,27 @@ const __pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 // not an error (ADR 0027 Q6).
 exposeDocs(server, __pkgDir, { docsDir: "wiki", recursive: true });
 
-// ── Server State ─────────────────────────────────────────────────────────────
-
-let domainDirty = false;
-const rwlock = new ReadWriteLock();
-const expectedChanges = new ExpectedChanges();
-// Constructed in startServer() once CONFIG_PATH/CONFIG_WATCH_KEY are known;
-// owns txId (see the `watcher.txId` accessor used throughout below).
-let watcher: OptimisticWatcher;
-let domainConfigCache: DomainConfig | null = null;
-let domainDataCache: ComputeDomainDataResult | null = null;
+// Shared, server-wide `ExpectedChanges` — one instance regardless of how the
+// registry actually serving this process gets built (the default parameter
+// of startServer below, or the explicit registry cli.ts builds for
+// --project-dir/--config/--extracted). Both paths inject this same instance
+// into buildRegistry's `expected` option, which is what makes the shared
+// purgeExpired interval near the bottom of this file purge the registry this
+// server actually ends up serving rather than an orphaned private instance.
+export const expectedChanges = new ExpectedChanges();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Not exported directly (see the B1 grep contract this declaration is pinned
+// by) — re-exported via the `export { emitLog }` statement below instead, so
+// cli.ts can inject it into buildRegistry's `emit` option.
 function emitLog(level: "debug" | "info" | "warning" | "error", message: string): void {
   server.sendLoggingMessage({ level, logger: "c3-domain-manager", data: message }).catch(() => {});
 }
+export { emitLog };
 
 function isWithinDir(fullPath: string, dir: string): boolean {
   return fullPath.startsWith(dir + path.sep) || fullPath === dir;
-}
-
-function readExtracted(relPath: string): string | null {
-  const fullPath = path.resolve(path.join(EXTRACTED_DIR, relPath));
-  if (!isWithinDir(fullPath, EXTRACTED_DIR)) return null;
-  if (!fs.existsSync(fullPath)) return null;
-  return fs.readFileSync(fullPath, "utf-8");
 }
 
 function notFound(tool: string, hint: string): { content: { type: "text"; text: string }[]; isError: true } {
@@ -93,67 +80,78 @@ function notFound(tool: string, hint: string): { content: { type: "text"; text: 
   };
 }
 
-const STALE_WARNING_LINE = "[Warning: domain index may be stale — run regenerate to refresh]";
-const STALE_WARNING = "\n\n" + STALE_WARNING_LINE;
-
-function appendStaleWarning(text: string): string {
-  return domainDirty ? text + STALE_WARNING : text;
-}
-
-// Footer for paginatedContent on index reads: the stale warning rides as a
-// trailing footer line (omitted entirely when the index is fresh).
-function staleFooter(): (() => string) | undefined {
-  return domainDirty ? () => STALE_WARNING_LINE : undefined;
-}
-
 const PAGINATION_PARAMS = {
   offset: z.number().int().min(1).optional().describe("Start line (1-based). Omit to start from beginning."),
   limit: z.number().int().min(1).optional().describe("Max lines to return. Omit to return all."),
 };
 
-// ── Domain Config Cache ───────────────────────────────────────────────────────
+// Selector accepted by every per-project tool via registerProjectTool. Optional
+// so a single-registered-project server keeps working with no client change;
+// ProjectRegistry.resolve() is what rejects an omitted id when more than one
+// project is registered.
+const PROJECT_PARAM = z
+  .string()
+  .optional()
+  .describe(
+    "Which registered project to target, by id (see list-projects for known ids and roots). " +
+      "Optional when exactly one project is registered; required to disambiguate when more than one is.",
+  );
 
-async function loadDomainConfig(): Promise<DomainConfig | CallToolResult> {
-  if (!domainConfigCache) {
-    const cfg = await loadProjectConfig(CONFIG_DIR, CONFIG_FILENAME, DomainConfigSchema);
-    if (isMcpError(cfg)) return cfg; // do NOT cache transient errors
-    domainConfigCache = cfg;
-  }
-  return domainConfigCache;
-}
-
-async function getDomainData(): Promise<ComputeDomainDataResult | CallToolResult> {
-  if (!domainDataCache) {
-    const config = await loadDomainConfig();
-    if (isMcpError(config)) return config;
-    domainDataCache = computeDomainData(PROJECT_ROOT, config);
-  }
-  return domainDataCache;
-}
-
-function writeDomainConfig(config: DomainConfig): void {
-  watcher.expect(CONFIG_WATCH_KEY);
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, "\t") + "\n", "utf-8");
-  // Caching the mutated object without re-validation is safe: the lenient
-  // .passthrough() schema still accepts it, and we own the mutation.
-  domainConfigCache = config;
-  watcher.bump();
-  domainDirty = true;
-  emitLog("info", `domain-config.json updated (txId → ${watcher.txId})`);
-}
-
-// onError hook for the mutate tools: a write that throws (e.g. a failed
-// fs.writeFileSync) leaves txId un-bumped while the on-disk file may have
-// changed — and the watcher swallows its own event via expectedChanges — so the
-// client would never learn to reconcile. Bumping txId here forces a re-read.
-function onWriteError(err: unknown): void {
-  watcher.bump();
-  emitLog("error", `domain-config.json write failed (txId → ${watcher.txId}): ${err instanceof Error ? err.message : String(err)}`);
+/**
+ * Wraps `server.registerTool` for every tool that targets a single project:
+ * resolves `args.project` against `REGISTRY` (outside any lock — see below),
+ * then acquires exactly the one lock the tool needs on the resolved
+ * `ProjectContext` before invoking `body`.
+ *
+ * `ReadWriteLock` has no owner tracking, no reentrancy, and is
+ * write-preferring (`acquireRead` queues behind any pending write), so a
+ * nested acquisition deadlocks in both directions. `body` must therefore
+ * never itself acquire `ctx.rwlock` — this wrapper is the only place that
+ * does.
+ */
+function registerProjectTool<S extends z.ZodRawShape = Record<string, never>>(
+  name: string,
+  cfg: {
+    title: string;
+    description: string;
+    annotations: ToolAnnotations;
+    inputSchema?: S;
+  },
+  mode: "read" | "write",
+  body: (ctx: ProjectContext, args: ShapeOutput<S & { project: typeof PROJECT_PARAM }>) => Promise<CallToolResult>,
+): void {
+  const inputSchema = { ...(cfg.inputSchema ?? {}), project: PROJECT_PARAM } as S & { project: typeof PROJECT_PARAM };
+  // The `as any` below is a single, narrow crossing: `registerTool`'s callback
+  // type is a conditional type over its InputArgs generic (BaseToolCallback),
+  // and a conditional type over a still-abstract, naked type parameter (S,
+  // from this enclosing generic function) is a TS-known deferred/unresolved
+  // type — it cannot be reduced to either branch, so no concrete function
+  // value can ever be proven assignable to it while S remains abstract. The
+  // runtime shape is correct by construction (inputSchema above is exactly
+  // this callback's argument shape); only TS's inference through the SDK's
+  // own conditional type is what can't be threaded here.
+  const callback = async (args: ShapeOutput<S & { project: typeof PROJECT_PARAM }>) => {
+    const ctx = REGISTRY.resolve(args.project);
+    if (isMcpError(ctx)) return ctx;
+    return mode === "read"
+      ? ctx.rwlock.read(() => body(ctx, args))
+      : ctx.rwlock.write(() => body(ctx, args));
+  };
+  server.registerTool(
+    name,
+    {
+      title: cfg.title,
+      description: cfg.description,
+      annotations: cfg.annotations,
+      inputSchema,
+    },
+    callback as any,
+  );
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
-server.registerTool(
+registerProjectTool(
   "read-domain-index",
   {
     title: "Read Domain Index",
@@ -165,24 +163,24 @@ server.registerTool(
       ...PAGINATION_PARAMS,
     },
   },
-  async ({ domain, offset, limit }) =>
-    rwlock.read(async () => {
-      const relPath = domain
-        ? `domain-index/${domain}.md`
-        : "domain-index/index.md";
-      const text = readExtracted(relPath);
-      if (text === null) {
-        const indexText = readExtracted("domain-index/index.md");
-        const hint = domain
-          ? `No domain index found for '${domain}'. Available domains:\n${indexText ?? "(index not found)"}`
-          : "domain-index/index.md not found. Run 'npm run generate-domain' to generate it.";
-        return notFound("read-domain-index", hint);
-      }
-      return paginatedContent(text, { offset, limit }, staleFooter());
-    })
+  "read",
+  async (ctx, { domain, offset, limit }) => {
+    const relPath = domain
+      ? `domain-index/${domain}.md`
+      : "domain-index/index.md";
+    const text = ctx.readExtracted(relPath);
+    if (text === null) {
+      const indexText = ctx.readExtracted("domain-index/index.md");
+      const hint = domain
+        ? `No domain index found for '${domain}'. Available domains:\n${indexText ?? "(index not found)"}`
+        : "domain-index/index.md not found. Run 'npm run generate-domain' to generate it.";
+      return notFound("read-domain-index", hint);
+    }
+    return paginatedContent(text, { offset, limit }, ctx.staleFooter());
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "read-domain-config",
   {
     title: "Read Domain Config",
@@ -195,94 +193,92 @@ server.registerTool(
         .describe("Which section to return (default: all)"),
     },
   },
-  async ({ section }) =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const text = formatDomainConfig(config, section as DomainConfigSection);
-        return { content: [{ type: "text", text }] };
-      } catch (e) {
-        return notFound("read-domain-config", `Error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    })
+  "read",
+  async (ctx, { section }) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const text = formatDomainConfig(config, section as DomainConfigSection);
+      return { content: [{ type: "text", text }] };
+    } catch (e) {
+      return notFound("read-domain-config", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "list-uncategorized",
   {
     title: "List Uncategorized Files",
     description:
       "List project files (eventSheets, layouts, scripts) not covered by any domain mapping or override in domain-config.json. Useful for maintaining domain coverage.",
     annotations: READ_ONLY,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const uncategorized = listUncategorized(PROJECT_ROOT, config);
-        if (uncategorized.length === 0) {
-          return { content: [{ type: "text", text: "All files are categorized." }] };
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${uncategorized.length} uncategorized files:\n${uncategorized.join("\n")}`,
-            },
-          ],
-        };
-      } catch (e) {
-        return notFound("list-uncategorized", `Error: ${e instanceof Error ? e.message : String(e)}`);
+  "read",
+  async (ctx) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const uncategorized = listUncategorized(ctx.root, config);
+      if (uncategorized.length === 0) {
+        return { content: [{ type: "text", text: "All files are categorized." }] };
       }
-    })
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${uncategorized.length} uncategorized files:\n${uncategorized.join("\n")}`,
+          },
+        ],
+      };
+    } catch (e) {
+      return notFound("list-uncategorized", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "list-stale-overrides",
   {
     title: "List Stale Overrides",
     description:
       "List override entries in domain-config.json that are dead weight: either they point to files that no longer exist on disk (stale), or the file still exists but no walk can ever surface it, so the override can never take effect (inert). Both kinds should be removed to keep the domain config clean.",
     annotations: READ_ONLY,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const stale = listStaleOverrides(PROJECT_ROOT, config);
-        const inert = listInertOverrides(PROJECT_ROOT, config);
-        if (stale.length === 0 && inert.length === 0) {
-          return { content: [{ type: "text", text: "No stale or inert overrides found." }] };
-        }
-        const sections: string[] = [];
-        if (stale.length > 0) {
-          sections.push(`${stale.length} stale overrides:\n${stale.join("\n")}`);
-        }
-        if (inert.length > 0) {
-          sections.push(
-            `${inert.length} inert overrides:\n${inert.map((i) => `${i.key}\n  ${i.reason}`).join("\n")}`,
-          );
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: sections.join("\n\n"),
-            },
-          ],
-        };
-      } catch (e) {
-        return notFound("list-stale-overrides", `Error: ${e instanceof Error ? e.message : String(e)}`);
+  "read",
+  async (ctx) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const stale = listStaleOverrides(ctx.root, config);
+      const inert = listInertOverrides(ctx.root, config);
+      if (stale.length === 0 && inert.length === 0) {
+        return { content: [{ type: "text", text: "No stale or inert overrides found." }] };
       }
-    })
+      const sections: string[] = [];
+      if (stale.length > 0) {
+        sections.push(`${stale.length} stale overrides:\n${stale.join("\n")}`);
+      }
+      if (inert.length > 0) {
+        sections.push(
+          `${inert.length} inert overrides:\n${inert.map((i) => `${i.key}\n  ${i.reason}`).join("\n")}`,
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: sections.join("\n\n"),
+          },
+        ],
+      };
+    } catch (e) {
+      return notFound("list-stale-overrides", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "set-overrides",
   {
     title: "Set Domain Overrides",
@@ -293,19 +289,20 @@ server.registerTool(
     inputSchema: {
       overrides: z.record(z.string(), z.string())
         .describe("File path → domain/subdomain name"),
-      txId: z.number().optional()
-        .describe("Expected txId for optimistic concurrency — rejected if stale"),
+      txId: z.string().optional()
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
     },
   },
-  async ({ overrides: newOverrides, txId: expectedTxId }) =>
-    rwlock.write(withMcpErrors(async () => {
-      if (expectedTxId !== undefined && expectedTxId !== watcher.txId) {
+  "write",
+  async (ctx, { overrides: newOverrides, txId: expectedTxId }) =>
+    withMcpErrors(async (): Promise<CallToolResult> => {
+      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
         return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${watcher.txId}. Re-read state and retry.` }],
+          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
           isError: true,
         };
       }
-      const config = await loadDomainConfig();
+      const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       const validNames = collectValidDomainNames(config);
       const keyErrors = validateOverrideKeys(Object.keys(newOverrides));
@@ -328,15 +325,15 @@ server.registerTool(
         }
         config.overrides[filePath] = domain;
       }
-      writeDomainConfig(config);
+      ctx.writeDomainConfig(config);
       const parts: string[] = [];
       if (added.length > 0) parts.push(`Added ${added.length}:\n${added.join("\n")}`);
       if (updated.length > 0) parts.push(`Updated ${updated.length}:\n${updated.join("\n")}`);
-      return mcpContent(parts.join("\n\n"), `txId: ${watcher.txId}`);
-    }, { onError: onWriteError }))
+      return mcpContent(parts.join("\n\n"), `txId: ${formatTxToken(ctx.id, ctx.watcher.txId)}`);
+    }, { onError: ctx.onWriteError })(),
 );
 
-server.registerTool(
+registerProjectTool(
   "remove-overrides",
   {
     title: "Remove Domain Overrides",
@@ -347,19 +344,20 @@ server.registerTool(
     inputSchema: {
       paths: z.array(z.string())
         .describe("File paths to remove from overrides"),
-      txId: z.number().optional()
-        .describe("Expected txId for optimistic concurrency — rejected if stale"),
+      txId: z.string().optional()
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
     },
   },
-  async ({ paths, txId: expectedTxId }) =>
-    rwlock.write(withMcpErrors(async () => {
-      if (expectedTxId !== undefined && expectedTxId !== watcher.txId) {
+  "write",
+  async (ctx, { paths, txId: expectedTxId }) =>
+    withMcpErrors(async (): Promise<CallToolResult> => {
+      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
         return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${watcher.txId}. Re-read state and retry.` }],
+          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
           isError: true,
         };
       }
-      const config = await loadDomainConfig();
+      const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       if (!config.overrides || Object.keys(config.overrides).length === 0) {
         return { content: [{ type: "text", text: "No overrides to remove." }] };
@@ -374,87 +372,84 @@ server.registerTool(
       if (removed.length === 0) {
         return { content: [{ type: "text", text: "None of the specified paths were in overrides." }] };
       }
-      writeDomainConfig(config);
-      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${watcher.txId}`);
-    }, { onError: onWriteError }))
+      ctx.writeDomainConfig(config);
+      return mcpContent(`Removed ${removed.length}:\n${removed.join("\n")}`, `txId: ${formatTxToken(ctx.id, ctx.watcher.txId)}`);
+    }, { onError: ctx.onWriteError })(),
 );
 
-server.registerTool(
+registerProjectTool(
   "regenerate",
   {
     title: "Regenerate Domain Index",
     description:
       "Run the domain index generator and update extracted/domain-index/. Clears the domainDirty flag. Use after external edits to domain-config.json or source files, or when domainDirty is true.",
     annotations: REGENERATE,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.write(async () => {
-      const lines: string[] = [];
-      const log: Logger = (...args) => lines.push(args.map(String).join(" "));
-      try {
-        await watcher.suppress(async () => {
-          await generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_DIR, CONFIG_FILENAME, log);
-        });
-        // Populate domain data cache
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        domainDataCache = computeDomainData(PROJECT_ROOT, config);
-        domainDirty = false;
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-        };
-      } catch (e) {
-        return {
-          content: [{ type: "text", text: `Error: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        };
-      }
-    })
+  "write",
+  async (ctx) => {
+    const lines: string[] = [];
+    const log: Logger = (...args) => lines.push(args.map(String).join(" "));
+    try {
+      await ctx.watcher.suppress(async () => {
+        await generateDomainIndex(ctx.root, ctx.extractedDir, ctx.configDir, ctx.configFileName, log);
+      });
+      // Force a fresh recompute (never reuse a cached value here — that is
+      // exactly what a regenerate is for) and record it, clearing domainDirty.
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      ctx.markRegenerated(computeDomainData(ctx.root, config));
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+      };
+    } catch (e) {
+      return {
+        content: [{ type: "text", text: `Error: ${e instanceof Error ? e.message : String(e)}` }],
+        isError: true,
+      };
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "get-state",
   {
     title: "Get Server State",
     description:
       "Returns the current server state: txId (incremented on domain-config.json changes) and domainDirty (true if domain-config.json or source files changed since last regeneration).",
     annotations: READ_ONLY,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.read(async () => {
-      return {
-        content: [{ type: "text", text: `txId: ${watcher.txId}\ndomainDirty: ${domainDirty}` }],
-      };
-    })
+  "read",
+  async (ctx) => {
+    return {
+      content: [{ type: "text", text: `txId: ${formatTxToken(ctx.id, ctx.watcher.txId)}\ndomainDirty: ${ctx.domainDirty}` }],
+    };
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "glossary-check",
   {
     title: "Check Glossary Collisions",
     description:
       "Check for glossary term collisions across domains. Reports terms that appear in multiple domains with different definitions.",
     annotations: READ_ONLY,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const entries = collectGlossary(config);
-        const collisions = findCollisions(entries);
-        const report = formatGlossaryReport(collisions);
-        return { content: [{ type: "text", text: report }] };
-      } catch (e) {
-        return notFound("glossary-check", `Error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    })
+  "read",
+  async (ctx) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const entries = collectGlossary(config);
+      const collisions = findCollisions(entries);
+      const report = formatGlossaryReport(collisions);
+      return { content: [{ type: "text", text: report }] };
+    } catch (e) {
+      return notFound("glossary-check", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "validate-boundaries",
   {
     title: "Validate Domain Boundaries",
@@ -465,71 +460,75 @@ server.registerTool(
       domain: z.string().optional().describe("Filter violations to a specific domain"),
     },
   },
-  async ({ domain }) =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const data = await getDomainData();
-        if (isMcpError(data)) return data;
-        const { domains } = data;
-        const report = validateBoundaries(domains, config, domain);
-        const text = formatBoundaryReport(report);
-        return { content: [{ type: "text", text: appendStaleWarning(text) }] };
-      } catch (e) {
-        return notFound("validate-boundaries", `Error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    })
+  "read",
+  async (ctx, { domain }) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const data = await ctx.getDomainData();
+      if (isMcpError(data)) return data;
+      const { domains } = data;
+      const report = validateBoundaries(domains, config, domain);
+      const text = formatBoundaryReport(report);
+      return { content: [{ type: "text", text: ctx.appendStaleWarning(text) }] };
+    } catch (e) {
+      return notFound("validate-boundaries", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+// Deliberately omits the stale-index warning: this diagnostic re-walks event
+// sheets fresh from disk and never reads the cached domain index, so index
+// staleness is irrelevant to its output (see wiki/reference/domain-architecture.md).
+registerProjectTool(
   "validate-editor",
   {
     title: "Validate Editor Strictness",
     description:
       "Report event sheets the C3 editor would reject on import (editor-strictness validation). Flags variable events missing a comment and group events missing a description — fields the C3 editor loader requires but the lenient parse types allow to be absent. Validates sheets fresh from disk, so its result is independent of domain-index staleness.",
     annotations: READ_ONLY,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const report = validateEditorStrictness(PROJECT_ROOT, config);
-        // No appendStaleWarning: this diagnostic re-walks sheets fresh and never
-        // reads the cached domain index, so the index-staleness warning would mislead.
-        return { content: [{ type: "text", text: formatEditorStrictnessReport(report) }] };
-      } catch (e) {
-        return notFound("validate-editor", `Error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    })
+  "read",
+  async (ctx) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const report = validateEditorStrictness(ctx.root, config);
+      // No appendStaleWarning: this diagnostic re-walks sheets fresh and never
+      // reads the cached domain index, so the index-staleness warning would mislead.
+      return { content: [{ type: "text", text: formatEditorStrictnessReport(report) }] };
+    } catch (e) {
+      return notFound("validate-editor", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+// Deliberately omits the stale-index warning: this diagnostic derives addon
+// attribution fresh from disk and never reads the cached domain index, so
+// index staleness is irrelevant to its output (same reasoning as validate-editor).
+registerProjectTool(
   "addon-inventory",
   {
     title: "Addon Inventory",
     description:
       "Report project-wide addon usage by cross-referencing the manifest's declared usedAddons against the addons each object type and family actually draws on. Flags declared-but-unused addons (a manifest entry nothing uses — a dead dependency) and used-but-undeclared addons (drawn on but absent from usedAddons — manifest drift). Derives attribution fresh from disk, so its result is independent of domain-index staleness.",
     annotations: READ_ONLY,
-    inputSchema: {},
   },
-  async () =>
-    rwlock.read(async () => {
-      try {
-        const report = computeAddonInventory(PROJECT_ROOT);
-        // No appendStaleWarning: this diagnostic derives attribution fresh from
-        // disk and never reads the cached domain index, so the index-staleness
-        // warning would mislead (same reasoning as validate-editor).
-        return { content: [{ type: "text", text: formatAddonInventoryReport(report) }] };
-      } catch (e) {
-        return notFound("addon-inventory", `Error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    })
+  "read",
+  async (ctx) => {
+    try {
+      const report = computeAddonInventory(ctx.root);
+      // No appendStaleWarning: this diagnostic derives attribution fresh from
+      // disk and never reads the cached domain index, so the index-staleness
+      // warning would mislead (same reasoning as validate-editor).
+      return { content: [{ type: "text", text: formatAddonInventoryReport(report) }] };
+    } catch (e) {
+      return notFound("addon-inventory", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "domain-health",
   {
     title: "Domain Health Metrics",
@@ -540,32 +539,32 @@ server.registerTool(
       domain: z.string().optional().describe("Compute metrics for a specific domain only"),
     },
   },
-  async ({ domain: domainFilter }) =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const data = await getDomainData();
-        if (isMcpError(data)) return data;
-        const { domains } = data;
-        let targetDomains = domains;
-        if (domainFilter) {
-          targetDomains = domains.filter(d => d.name === domainFilter);
-          if (targetDomains.length === 0) {
-            return notFound("domain-health", `Domain '${domainFilter}' not found`);
-          }
+  "read",
+  async (ctx, { domain: domainFilter }) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const data = await ctx.getDomainData();
+      if (isMcpError(data)) return data;
+      const { domains } = data;
+      let targetDomains = domains;
+      if (domainFilter) {
+        targetDomains = domains.filter(d => d.name === domainFilter);
+        if (targetDomains.length === 0) {
+          return notFound("domain-health", `Domain '${domainFilter}' not found`);
         }
-        const hubDomains = computeHubDomains(domains, config);
-        const results = targetDomains.map(d => ({ name: d.name, ...computeHealth(d, hubDomains) }));
-        const text = formatHealthReport(results);
-        return { content: [{ type: "text", text: appendStaleWarning(text) }] };
-      } catch (e) {
-        return notFound("domain-health", `Error: ${e instanceof Error ? e.message : String(e)}`);
       }
-    })
+      const hubDomains = computeHubDomains(domains, config);
+      const results = targetDomains.map(d => ({ name: d.name, ...computeHealth(d, hubDomains) }));
+      const text = formatHealthReport(results);
+      return { content: [{ type: "text", text: ctx.appendStaleWarning(text) }] };
+    } catch (e) {
+      return notFound("domain-health", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-server.registerTool(
+registerProjectTool(
   "context-map",
   {
     title: "Generate Context Map",
@@ -578,102 +577,107 @@ server.registerTool(
       includeObserved: z.boolean().optional().default(true).describe("Include observed (undeclared) dependencies"),
     },
   },
-  async ({ format, domain, includeObserved }) =>
-    rwlock.read(async () => {
-      try {
-        const config = await loadDomainConfig();
-        if (isMcpError(config)) return config;
-        const data = await getDomainData();
-        if (isMcpError(data)) return data;
-        const { domains } = data;
-        const text = generateContextMap(domains, config, { format, domain, includeObserved });
-        return { content: [{ type: "text", text: appendStaleWarning(text) }] };
-      } catch (e) {
-        return notFound("context-map", `Error: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    })
+  "read",
+  async (ctx, { format, domain, includeObserved }) => {
+    try {
+      const config = await ctx.loadDomainConfig();
+      if (isMcpError(config)) return config;
+      const data = await ctx.getDomainData();
+      if (isMcpError(data)) return data;
+      const { domains } = data;
+      const text = generateContextMap(domains, config, { format, domain, includeObserved });
+      return { content: [{ type: "text", text: ctx.appendStaleWarning(text) }] };
+    } catch (e) {
+      return notFound("context-map", `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  },
 );
 
-// ── File Watcher ─────────────────────────────────────────────────────────────
-
-function setupWatcher(): void {
-  if (fs.existsSync(CONFIG_PATH)) watcher.start();
-
-  // Periodically purge expired entries from expectedChanges
-  setInterval(() => expectedChanges.purgeExpired(), 30_000).unref();
-}
+// The one tool exempt from the `project` selector: it lists every registered
+// project so a client can discover which id to pass to every other tool.
+// Registered directly with server.registerTool, not through
+// registerProjectTool. No txId — deliberately, so a client cannot mistake a
+// listing snapshot for a reservation, and so a fourth token-emission site
+// (besides set-overrides, remove-overrides, and the external-change watcher
+// callback) is not created.
+server.registerTool(
+  "list-projects",
+  {
+    title: "List Registered Projects",
+    description:
+      "List every project registered with this server: its id (pass as `project` to any other tool to target it) and its resolved root directory. Useful to discover ids before calling a per-project tool when more than one project is registered.",
+    annotations: READ_ONLY,
+  },
+  async () => {
+    const ids = REGISTRY.ids();
+    const lines = ids.map((id) => {
+      const ctx = REGISTRY.resolve(id);
+      if (isMcpError(ctx)) return `${id}: (error resolving project)`;
+      return `${id}: ${ctx.root}`;
+    });
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  },
+);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-export async function startServer(loc: ResolvedLocations = resolveLocations({}, process.cwd())): Promise<void> {
-  PROJECT_ROOT = loc.projectRoot;
-  EXTRACTED_DIR = loc.extractedDir;
-  CONFIG_PATH = loc.configPath;
-  CONFIG_DIR = loc.configDir;
-  CONFIG_FILENAME = loc.configFileName;
-  CONFIG_WATCH_KEY = loc.configWatchKey;
-  EXTRACTED_EPHEMERAL = loc.extractedEphemeral;
-
-  // Constructed unconditionally — the constructor performs no filesystem
-  // access — so txId always has an owner, even when domain-config.json
-  // doesn't yet exist on disk; setupWatcher() below decides whether to
-  // actually start it. watchDirs names the config file itself (not a
-  // directory): the watcherFactory below watches that single file and
-  // reports every event under the canonical CONFIG_WATCH_KEY, which is the
-  // exact key `expect()` stores, so Layer-2 suppression matches.
-  watcher = new OptimisticWatcher({
-    watchDirs: [CONFIG_PATH],
-    expected: expectedChanges,
-    watcherFactory: (p, onEvent) => {
-      const w = fs.watch(p, () => onEvent(CONFIG_WATCH_KEY));
-      // unref, or this handle alone keeps the process alive after stdin closes
-      // (#70). shutdown() calls watcher.stop(), but shutdown() is wired only to
-      // SIGINT/SIGTERM — a client that disconnects by closing stdin raises
-      // neither, so stop() is never reached on that path and the server orphans.
-      // Measured: with the handle ref'd the process was still running 8s after
-      // stdin close; unref'd it exits ~immediately, matching a no-config server
-      // (where the existsSync guard means no handle is created at all).
-      // Same idiom as the purgeExpired interval below.
-      w.unref();
-      return { close: () => w.close() };
-    },
-    onExternalChange: () => {
-      domainDirty = true;
-      domainConfigCache = null;
-      domainDataCache = null;
-      emitLog("warning", `External change detected: domain-config.json (txId → ${watcher.txId})`);
-    },
-  });
-
-  const domainIndexPath = path.join(EXTRACTED_DIR, "domain-index");
-  if (!fs.existsSync(domainIndexPath)) {
-    console.error(`[c3-domain-manager] domain-index not found — auto-generating...`);
-    try {
-      const log: Logger = (...args) => console.error(`[c3-domain-manager]   ${args.map(String).join(" ")}`);
-      await generateDomainIndex(PROJECT_ROOT, EXTRACTED_DIR, CONFIG_DIR, CONFIG_FILENAME, log);
-      console.error(`[c3-domain-manager] Auto-generation complete`);
-    } catch (e) {
-      console.error(`[c3-domain-manager] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
-      console.error(`[c3-domain-manager] Run 'npx c3-domain-manager generate' manually to generate domain index`);
-    }
+async function ensureDomainIndex(ctx: ProjectContext): Promise<void> {
+  const domainIndexPath = path.join(ctx.extractedDir, "domain-index");
+  if (fs.existsSync(domainIndexPath)) return;
+  console.error(`[c3-domain-manager] [${ctx.id}] domain-index not found — auto-generating...`);
+  try {
+    const log: Logger = (...args) => console.error(`[c3-domain-manager] [${ctx.id}]   ${args.map(String).join(" ")}`);
+    await generateDomainIndex(ctx.root, ctx.extractedDir, ctx.configDir, ctx.configFileName, log);
+    console.error(`[c3-domain-manager] [${ctx.id}] Auto-generation complete`);
+  } catch (e) {
+    console.error(`[c3-domain-manager] [${ctx.id}] Warning: auto-generation failed — ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`[c3-domain-manager] [${ctx.id}] Run 'npx c3-domain-manager generate' manually to generate domain index`);
   }
-  console.error(`[c3-domain-manager] Starting server in ${PROJECT_ROOT}`);
-  console.error(`[c3-domain-manager] config: ${CONFIG_PATH}${EXTRACTED_EPHEMERAL ? " | extracted: ephemeral" : ""}`);
+}
 
-  // Graceful shutdown
+export async function startServer(
+  registry: ProjectRegistry<ProjectContext> = buildRegistry(
+    [{ root: resolveLocations({}, process.cwd()).projectRoot }],
+    { emit: emitLog, expected: expectedChanges },
+  ),
+): Promise<void> {
+  REGISTRY = registry;
+
+  // computeDomainData is synchronous CPU work on a single-threaded runtime —
+  // Promise.all here would buy nothing and would only add an interleaving.
+  for (const id of REGISTRY.ids()) {
+    const ctx = REGISTRY.resolve(id);
+    if (isMcpError(ctx)) continue; // unreachable: id came from REGISTRY.ids()
+    await ensureDomainIndex(ctx);
+    console.error(`[c3-domain-manager] [${ctx.id}] Serving ${ctx.root}`);
+    console.error(`[c3-domain-manager] [${ctx.id}] config: ${ctx.configPath}${ctx.extractedEphemeral ? " | extracted: ephemeral" : ""}`);
+  }
+
+  // Graceful shutdown — iterates every registered context.
   function shutdown() {
     console.error("[c3-domain-manager] Shutting down...");
-    watcher.stop();
-    server.close().catch(() => {});
-    if (EXTRACTED_EPHEMERAL) {
-      try { fs.rmSync(EXTRACTED_DIR, { recursive: true, force: true }); } catch { /* best-effort */ }
+    for (const id of REGISTRY.ids()) {
+      const ctx = REGISTRY.resolve(id);
+      if (isMcpError(ctx)) continue;
+      ctx.stop();
     }
+    server.close().catch(() => {});
     process.exit(0);
   }
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  setupWatcher();
+  for (const id of REGISTRY.ids()) {
+    const ctx = REGISTRY.resolve(id);
+    if (isMcpError(ctx)) continue;
+    ctx.start();
+  }
+
+  // Periodically purge expired entries from the shared expectedChanges — one
+  // timer for the one shared instance, regardless of how many projects are
+  // registered.
+  setInterval(() => expectedChanges.purgeExpired(), 30_000).unref();
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

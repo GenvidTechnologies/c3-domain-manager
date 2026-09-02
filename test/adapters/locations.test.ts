@@ -3,9 +3,35 @@ import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { resolveLocations, resolveProjectRoot, NO_EXTRACTED } from "../../src/adapters/locations.js";
-import { ExpectedChanges, isMcpError } from "@genvidtech/mcp-utils";
+import {
+  resolveLocations,
+  resolveProjectRoot,
+  resolveProjectRoots,
+  NO_EXTRACTED,
+  deriveProjectId,
+  deriveUniqueProjectIds,
+  buildRegistry,
+} from "../../src/adapters/locations.js";
+import { ExpectedChanges, isMcpError, type ResolvedRoot, type ResolvedRoots } from "@genvidtech/mcp-utils";
 import { makeTempDir, removeTempDir } from "../syntheticProject.js";
+import { buildServerProjectSpecs } from "../../src/cliProjectFlags.js";
+import type { EmitFn } from "../../src/adapters/projectContext.js";
+
+const noopEmit: EmitFn = () => {};
+
+/** Temporarily replaces console.error, capturing every call's joined args as a string. */
+function captureConsoleError<T>(fn: () => T): { result: T; messages: string[] } {
+  const original = console.error;
+  const messages: string[] = [];
+  console.error = (...args: unknown[]) => {
+    messages.push(args.map(String).join(" "));
+  };
+  try {
+    return { result: fn(), messages };
+  } finally {
+    console.error = original;
+  }
+}
 
 // Use a deterministic project root that is always absolute and works cross-platform.
 const root = path.resolve(os.tmpdir(), "c3dm-test-proj");
@@ -240,5 +266,380 @@ describe("resolveProjectRoot", () => {
 
     const result = resolveProjectRoot({}, tmpDir, {});
     assert.isTrue(isMcpError(result));
+  });
+});
+
+describe("resolveProjectRoots", () => {
+  let tmpDir: string | undefined;
+
+  afterEach(() => {
+    if (tmpDir) {
+      removeTempDir(tmpDir);
+      tmpDir = undefined;
+    }
+  });
+
+  // M5: single-marker discovery agrees with the singular resolver's own result.
+  it("single child marker: one path, equal to resolveProjectRoot's own result, both source: discovery", () => {
+    tmpDir = makeTempDir("c3dm-prs-single-");
+    const childDir = path.join(tmpDir, "myproject");
+    fs.mkdirSync(childDir);
+    fs.writeFileSync(path.join(childDir, "project.c3proj"), "");
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const pluralResolved = plural as ResolvedRoots;
+    assert.equal(pluralResolved.paths.length, 1);
+    assert.equal(pluralResolved.source, "discovery");
+
+    const singular = resolveProjectRoot({}, tmpDir, {});
+    assert.isFalse(isMcpError(singular));
+    const singularResolved = singular as ResolvedRoot;
+    assert.equal(singularResolved.source, "discovery");
+    assert.equal(pluralResolved.paths[0], singularResolved.path);
+  });
+
+  // M4: three sibling markers succeed as a discovery set, feed buildRegistry
+  // and buildServerProjectSpecs cleanly, while the singular still errors on
+  // the identical directory (positive control proving genuine divergence).
+  it("three sibling markers: plural succeeds with 3 paths; singular still errors (ambiguous); flows through buildRegistry and buildServerProjectSpecs", () => {
+    tmpDir = makeTempDir("c3dm-prs-triple-");
+    for (const name of ["alpha", "beta", "gamma"]) {
+      const child = path.join(tmpDir, name);
+      fs.mkdirSync(child);
+      fs.writeFileSync(path.join(child, "project.c3proj"), "");
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const pluralResolved = plural as ResolvedRoots;
+    assert.equal(pluralResolved.source, "discovery");
+    assert.equal(pluralResolved.paths.length, 3);
+
+    // Positive control on the identical directory: the singular still errors.
+    const singular = resolveProjectRoot({}, tmpDir, {});
+    assert.isTrue(isMcpError(singular));
+
+    const registry = buildRegistry(
+      pluralResolved.paths.map((root) => ({ root })),
+      { emit: noopEmit },
+    );
+    assert.equal(registry.ids().length, 3);
+    assert.equal(new Set(registry.ids()).size, 3);
+
+    const specs = buildServerProjectSpecs({
+      projectValues: [],
+      resolveRoots: () => pluralResolved.paths,
+      config: undefined,
+      extracted: undefined,
+    });
+    assert.equal(specs.length, 3);
+  });
+
+  // M7: ascending sort regardless of directory-creation/readdir order.
+  it("sorts discovered paths ascending regardless of creation order", () => {
+    tmpDir = makeTempDir("c3dm-prs-order-");
+    for (const name of ["c", "a", "b"]) {
+      const child = path.join(tmpDir, name);
+      fs.mkdirSync(child);
+      fs.writeFileSync(path.join(child, "project.c3proj"), "");
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const paths = (plural as ResolvedRoots).paths;
+    const expectedSorted = [...paths].sort();
+    assert.deepEqual(paths, expectedSorted);
+
+    const registry = buildRegistry(
+      paths.map((root) => ({ root })),
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["a", "b", "c"]);
+  });
+
+  // M8 (registry half — the stderr-warning half is CLI-only and covered by
+  // test/mcp/rootFallbackWarning.test.ts, which spawns the real CLI): 0
+  // markers under cwd falls back to source: "cwd" with exactly one path,
+  // unchanged from resolveProjectRoot's own cwd fallback.
+  it("0 markers under cwd: falls back to source: cwd with exactly one path", () => {
+    tmpDir = makeTempDir("c3dm-prs-cwd-");
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const pluralResolved = plural as ResolvedRoots;
+    assert.equal(pluralResolved.source, "cwd");
+    assert.deepEqual(pluralResolved.paths, [tmpDir]);
+
+    const registry = buildRegistry(
+      pluralResolved.paths.map((root) => ({ root })),
+      { emit: noopEmit },
+    );
+    assert.equal(registry.ids().length, 1);
+  });
+
+  // M6: three immediate siblings have distinct basenames at searchDepth 1, so
+  // the -2 collision branch must not fire and no warning is emitted.
+  it("three sibling discovered roots derive three unsuffixed lowercase ids, no collision warning", () => {
+    tmpDir = makeTempDir("c3dm-prs-noclash-");
+    for (const name of ["Alpha", "Beta", "Gamma"]) {
+      const child = path.join(tmpDir, name);
+      fs.mkdirSync(child);
+      fs.writeFileSync(path.join(child, "project.c3proj"), "");
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const paths = (plural as ResolvedRoots).paths;
+    assert.equal(paths.length, 3);
+
+    const { result: registry, messages } = captureConsoleError(() =>
+      buildRegistry(
+        paths.map((root) => ({ root })),
+        { emit: noopEmit },
+      ),
+    );
+    assert.deepEqual(registry.ids(), ["alpha", "beta", "gamma"]);
+    assert.isEmpty(messages);
+  });
+
+  // M6 case-collision leg: `Game/` + `game/` colliding to one id (`game`,
+  // `game-2`) plus the warning — gated on OBSERVING that both directories
+  // actually persisted as distinct entries, never on process.platform. On a
+  // filesystem that folds the two names (case-insensitive), the second
+  // mkdirSync either throws EEXIST or silently lands on the same inode, so
+  // this probes both directly rather than inferring from the OS.
+  it("case-collision leg: Game/ + game/ collide to game/game-2 with a warning, when this filesystem actually keeps both", () => {
+    tmpDir = makeTempDir("c3dm-prs-case-");
+    const dirUpper = path.join(tmpDir, "Game");
+    fs.mkdirSync(dirUpper);
+    fs.writeFileSync(path.join(dirUpper, "project.c3proj"), "");
+
+    const dirLower = path.join(tmpDir, "game");
+    let bothCreated = true;
+    try {
+      fs.mkdirSync(dirLower);
+      fs.writeFileSync(path.join(dirLower, "project.c3proj"), "");
+    } catch {
+      bothCreated = false;
+    }
+
+    const entries = fs.readdirSync(tmpDir);
+    if (!bothCreated || entries.length < 2) {
+      // console.warn, not .log/.debug: test/setup.ts silences the latter two.
+      console.warn(
+        `case-collision leg skipped — this filesystem folds 'Game' and 'game' into one entry (entries: ${JSON.stringify(entries)})`,
+      );
+      return;
+    }
+
+    const plural = resolveProjectRoots({}, tmpDir, {});
+    assert.isFalse(isMcpError(plural));
+    const paths = (plural as ResolvedRoots).paths;
+    assert.equal(paths.length, 2);
+
+    const { result: registry, messages } = captureConsoleError(() =>
+      buildRegistry(
+        paths.map((root) => ({ root })),
+        { emit: noopEmit },
+      ),
+    );
+    assert.deepEqual(registry.ids(), ["game", "game-2"]);
+    assert.isTrue(
+      messages.some((m) => m.includes("game")),
+      `expected a stderr warning naming the 'game' collision, got: ${JSON.stringify(messages)}`,
+    );
+  });
+});
+
+describe("deriveProjectId", () => {
+  it("derives from a relative path with a parent segment", () => {
+    assert.equal(deriveProjectId("../game-a"), "game-a");
+  });
+
+  it("lowercases and hyphenates whitespace in a bare name", () => {
+    assert.equal(deriveProjectId("Game A"), "game-a");
+  });
+});
+
+describe("deriveUniqueProjectIds", () => {
+  it("assigns each root's derived id when there is no collision", () => {
+    const ids = deriveUniqueProjectIds([
+      path.join(os.tmpdir(), "one", "game-a"),
+      path.join(os.tmpdir(), "two", "game-b"),
+    ]);
+    assert.deepEqual(ids, ["game-a", "game-b"]);
+  });
+
+  it("resolves a basename collision as base, base-2 (order-stable) and warns on stderr", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-dup-a", "sample");
+    const rootB = path.join(os.tmpdir(), "c3dm-dup-b", "sample");
+
+    const { result: ids, messages } = captureConsoleError(() => deriveUniqueProjectIds([rootA, rootB]));
+
+    assert.deepEqual(ids, ["sample", "sample-2"]);
+    assert.isTrue(
+      messages.some((m) => m.includes("sample")),
+      `expected a stderr warning naming the 'sample' collision, got: ${JSON.stringify(messages)}`,
+    );
+  });
+});
+
+describe("buildRegistry", () => {
+  it("derives ids from roots when no explicit id is given", () => {
+    const registry = buildRegistry(
+      [
+        { root: path.join(os.tmpdir(), "c3dm-br-1", "game-a") },
+        { root: path.join(os.tmpdir(), "c3dm-br-1", "game-b") },
+      ],
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["game-a", "game-b"]);
+  });
+
+  it("an explicit id overrides derivation from the root", () => {
+    const registry = buildRegistry(
+      [{ root: path.join(os.tmpdir(), "c3dm-br-2", "x"), id: "alpha" }],
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["alpha"]);
+    const ctx = registry.resolve("alpha");
+    assert.isFalse(isMcpError(ctx));
+  });
+
+  it("rejects two --project entries at the same directory (same default configPath)", () => {
+    const sameRoot = path.join(os.tmpdir(), "c3dm-br-3", "sample");
+    assert.throws(
+      () => buildRegistry([{ root: sameRoot }, { root: sameRoot }], { emit: noopEmit }),
+      /duplicate configPath/,
+    );
+    try {
+      buildRegistry([{ root: sameRoot }, { root: sameRoot }], { emit: noopEmit });
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Two entries at the same directory derive distinct ids (sample, sample-2) —
+      // the rejection is on configPath, and must still name both of those ids.
+      assert.include(message, "sample");
+      assert.include(message, "sample-2");
+    }
+  });
+
+  it("rejects two distinct roots forced onto one configPath via a shared absolute --config", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-br-4", "alpha-root");
+    const rootB = path.join(os.tmpdir(), "c3dm-br-4", "beta-root");
+    const sharedConfig = path.join(os.tmpdir(), "c3dm-br-4", "shared-config.json");
+
+    try {
+      buildRegistry(
+        [
+          { root: rootA, id: "alpha", config: sharedConfig },
+          { root: rootB, id: "beta", config: sharedConfig },
+        ],
+        { emit: noopEmit },
+      );
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.include(message, "duplicate configPath");
+      assert.include(message, "alpha");
+      assert.include(message, "beta");
+    }
+  });
+
+  it("rejects two specs that explicitly collide on the same id", () => {
+    assert.throws(
+      () =>
+        buildRegistry(
+          [
+            { root: path.join(os.tmpdir(), "c3dm-br-5", "a"), id: "alpha" },
+            { root: path.join(os.tmpdir(), "c3dm-br-5", "b"), id: "alpha" },
+          ],
+          { emit: noopEmit },
+        ),
+      /duplicate project id 'alpha'/,
+    );
+  });
+
+  it("R2a: rejects two specs sharing one absolute --extracted, naming both ids", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-br-6a", "alpha-root");
+    const rootB = path.join(os.tmpdir(), "c3dm-br-6a", "beta-root");
+    const sharedExtracted = path.join(os.tmpdir(), "c3dm-br-6a", "shared-extracted");
+
+    try {
+      buildRegistry(
+        [
+          { root: rootA, id: "alpha", extracted: sharedExtracted },
+          { root: rootB, id: "beta", extracted: sharedExtracted },
+        ],
+        { emit: noopEmit },
+      );
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.include(message, "duplicate extractedDir");
+      assert.include(message, "alpha");
+      assert.include(message, "beta");
+    }
+  });
+
+  it("R2b: rejects two sibling roots whose relative --extracted converges on the same absolute path", () => {
+    const parent = path.join(os.tmpdir(), "c3dm-br-6b");
+    const rootA = path.join(parent, "alpha-root");
+    const rootB = path.join(parent, "beta-root");
+
+    try {
+      buildRegistry(
+        [
+          { root: rootA, id: "alpha", extracted: "../shared-extracted" },
+          { root: rootB, id: "beta", extracted: "../shared-extracted" },
+        ],
+        { emit: noopEmit },
+      );
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.include(message, "duplicate extractedDir");
+      assert.include(message, "alpha");
+      assert.include(message, "beta");
+    }
+  });
+
+  it("R2 paired survival: two --extracted none specs build with distinct ephemeral temp dirs", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-br-6c", "alpha-root");
+    const rootB = path.join(os.tmpdir(), "c3dm-br-6c", "beta-root");
+
+    const registry = buildRegistry(
+      [
+        { root: rootA, id: "alpha", extracted: NO_EXTRACTED },
+        { root: rootB, id: "beta", extracted: NO_EXTRACTED },
+      ],
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["alpha", "beta"]);
+    const alphaCtx = registry.resolve("alpha");
+    const betaCtx = registry.resolve("beta");
+    assert.isFalse(isMcpError(alphaCtx));
+    assert.isFalse(isMcpError(betaCtx));
+    if (!isMcpError(alphaCtx) && !isMcpError(betaCtx)) {
+      assert.notEqual(alphaCtx.extractedDir, betaCtx.extractedDir);
+    }
+  });
+});
+
+describe("deriveUniqueProjectIds — R3", () => {
+  it("never manufactures a collision it then rejects: game, game, game-2 derive three distinct ids", () => {
+    const parent = path.join(os.tmpdir(), "c3dm-r3");
+    const rootA = path.join(parent, "a", "game");
+    const rootB = path.join(parent, "b", "game");
+    const rootC = path.join(parent, "c", "game-2");
+
+    const ids = deriveUniqueProjectIds([rootA, rootB, rootC]);
+    assert.equal(new Set(ids).size, 3, `expected three distinct ids, got: ${JSON.stringify(ids)}`);
+
+    const registry = buildRegistry(
+      [{ root: rootA }, { root: rootB }, { root: rootC }],
+      { emit: noopEmit },
+    );
+    assert.equal(new Set(registry.ids()).size, 3);
   });
 });

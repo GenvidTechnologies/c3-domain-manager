@@ -17,8 +17,9 @@ import { makeConfig } from "./domainModel.js";
  * instance, `txId`, `domainDirty`, caches, ...) in module-private bindings —
  * there is no in-process test-reachable surface. This harness drives the
  * *real* server through its production CLI path (`src/cli.ts server
- * --project-dir <root>`) over a real MCP `Client` connected via stdio, so
- * every assertion exercises the server exactly as a real MCP client would.
+ * --project-dir <root>` for one project, or `server --project <id>=<root>`
+ * repeated for N) over a real MCP `Client` connected via stdio, so every
+ * assertion exercises the server exactly as a real MCP client would.
  *
  * **Synthetic-only.** This module must never import the canonical-fixture
  * helper module — it builds throwaway C3 projects in per-test temp dirs via
@@ -26,7 +27,8 @@ import { makeConfig } from "./domainModel.js";
  * test.
  */
 
-export interface HarnessOpts {
+/** Per-project options, shared by the single-project shorthand and the multi-project `projects` map. */
+export interface ProjectOpts {
   /** Domain config written to `<root>/domain-config.json`. Default: a single synthetic domain. */
   config?: DomainConfig;
   /** Extra files created under the temp root, keyed by path relative to it. */
@@ -44,6 +46,39 @@ export interface HarnessOpts {
   autoGenerate?: boolean;
 }
 
+export interface HarnessOpts extends ProjectOpts {
+  /**
+   * Multi-project shape: id -> per-project opts. When given, the harness
+   * builds one temp root per id (via `makeTempDir`, given a
+   * `"mcp-harness-<id>-"` prefix),
+   * writes one `domain-config.json` each, and spawns the server with N
+   * `--project <id>=<root>` arguments — the CLI's registry-defining form
+   * (`buildServerProjectSpecs`). `--project-dir` is never passed in this mode.
+   *
+   * Omitted (the default): behaves exactly as before this option existed —
+   * one project spawned via `--project-dir <root>`, using the top-level
+   * `config`/`files`/`autoGenerate` shorthand (inherited from `ProjectOpts`
+   * above). Its id is derived by the server from the temp dir's basename and
+   * is never asserted on here, since `PROJECT_PARAM` is optional whenever
+   * exactly one project is registered. Mutually exclusive with `projects` in
+   * practice — the CLI itself only honours one shape at a time
+   * (`buildServerProjectSpecs` ignores `--project-dir` once any `--project`
+   * is given), so supplying both here is a caller bug, not a supported mix.
+   */
+  projects?: Record<string, ProjectOpts>;
+  /**
+   * Forwarded verbatim as a single shared `--extracted <value>` CLI flag —
+   * mirrors the CLI's own shape (`buildServerProjectSpecs` attaches one
+   * `extracted` value to every project spec; there is no per-project
+   * override). Used by issue #77's L2 row to pass `NO_EXTRACTED` ("none") so
+   * every registered project gets its own ephemeral temp dir instead of the
+   * harness's usual pre-created `<root>/extracted/domain-index/`. Omitted
+   * (the default): no `--extracted` flag is passed at all, unchanged from
+   * before this option existed.
+   */
+  extracted?: string;
+}
+
 /** One captured `notifications/message` (logging) notification from the server. */
 export interface LogNote {
   level: string;
@@ -53,14 +88,34 @@ export interface LogNote {
 
 export interface Harness {
   readonly client: Client;
+  /**
+   * The sole project's root / config path. Throws if more than one project
+   * is registered — use `roots`/`configPaths` instead once N > 1. This is a
+   * convenience for the (overwhelmingly common) single-project case, not a
+   * silent "first project" pick: this exact class of ambiguity is what
+   * issue #77 exists to eliminate, so the harness must not model it either.
+   */
   readonly root: string;
   readonly configPath: string;
+  /** Every registered project's root, keyed by id. */
+  readonly roots: Record<string, string>;
+  /** Every registered project's `domain-config.json` path, keyed by id. */
+  readonly configPaths: Record<string, string>;
   readonly notifications: readonly LogNote[];
   call(name: string, args?: Record<string, unknown>): Promise<CallToolResult>;
   waitForNote(pred: (n: LogNote) => boolean, ms?: number): Promise<LogNote>;
   stop(): Promise<void>;
   /** Captured child stderr so far (the server's banner + startup log lines). */
   stderr(): string;
+  /**
+   * The spawned child process's OS pid, or `null` before the transport has
+   * started (never the case once `startHarness` has resolved). Exposed so a
+   * test can signal the child directly (e.g. `process.kill(h.pid!,
+   * "SIGTERM")`) — issue #77's L2 row needs a real `SIGTERM`, distinct from
+   * `stop()`'s stdin-close-then-fallback path (see `Harness.stop`'s ordering
+   * note and L1's docstring for why the two are not interchangeable).
+   */
+  readonly pid: number | null;
 }
 
 interface Waiter {
@@ -71,8 +126,17 @@ interface Waiter {
 
 const DEFAULT_WAIT_MS = 2000;
 
-export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
-  const root = makeTempDir("mcp-harness-");
+/**
+ * Materializes one project's temp root: writes `domain-config.json`, any
+ * extra `files`, and (unless `autoGenerate`) a pre-created empty
+ * `extracted/domain-index/` so the server's startup auto-generation guard is
+ * a no-op. Shared by both the single-project shorthand and the multi-project
+ * `projects` map below — the only difference between them is which CLI flag
+ * (`--project-dir` vs `--project <id>=<root>`) the caller wires the result
+ * into.
+ */
+function buildProjectRoot(prefix: string, opts: ProjectOpts): { root: string; configPath: string } {
+  const root = makeTempDir(prefix);
   const config: DomainConfig = opts.config ?? makeConfig({ Domain0: { description: "Single synthetic domain" } });
   const configPath = path.join(root, "domain-config.json");
   createFile(root, "domain-config.json", JSON.stringify(config, null, "\t") + "\n");
@@ -87,15 +151,66 @@ export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
     // skips auto-generation on this spawn entirely.
     fs.mkdirSync(path.join(root, "extracted", "domain-index"), { recursive: true });
   }
+  return { root, configPath };
+}
+
+/**
+ * Returns the sole entry of a single-project record, or throws if more than
+ * one project is registered. Backs `Harness.root`/`Harness.configPath` — see
+ * their docstrings for why this throws rather than picking the first entry.
+ */
+function soleValue(record: Record<string, string>, accessor: string): string {
+  const entries = Object.entries(record);
+  if (entries.length !== 1) {
+    const ids = entries.map(([id]) => id).join(", ");
+    throw new Error(
+      `Harness.${accessor}: ${entries.length} projects are registered (${ids}) — use Harness.${accessor}s instead of the single-project accessor`,
+    );
+  }
+  return entries[0][1];
+}
+
+export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
+  // Multi-project shape (`opts.projects`) defines the registry entirely, via
+  // N `--project <id>=<root>` args. Omitted: the original single-project
+  // shape, spawned via `--project-dir <root>` exactly as before this option
+  // existed — required for the suites that predate multi-project support.
+  const multi = opts.projects !== undefined;
+  const projectEntries: [string, ProjectOpts][] = multi
+    ? Object.entries(opts.projects!)
+    : [["default", { config: opts.config, files: opts.files, autoGenerate: opts.autoGenerate }]];
+
+  const roots: Record<string, string> = {};
+  const configPaths: Record<string, string> = {};
+  const serverArgs: string[] = ["--import", "tsx", "src/cli.ts", "server"];
+
+  for (const [id, projectOpts] of projectEntries) {
+    // Distinguishable prefixes (issue #77 requirement): a leaked temp dir
+    // from a multi-project suite stays traceable back to which project id
+    // leaked it, not just that "a" mcp-harness dir leaked.
+    const prefix = multi ? `mcp-harness-${id}-` : "mcp-harness-";
+    const built = buildProjectRoot(prefix, projectOpts);
+    roots[id] = built.root;
+    configPaths[id] = built.configPath;
+    if (multi) {
+      serverArgs.push("--project", `${id}=${built.root}`);
+    }
+  }
+  if (!multi) {
+    serverArgs.push("--project-dir", roots["default"]);
+  }
+  if (opts.extracted !== undefined) {
+    serverArgs.push("--extracted", opts.extracted);
+  }
 
   // The child's `--import tsx` resolves against ITS OWN cwd, so cwd must be
-  // this repo's root — never `root` (the temp C3 project), which is reached
-  // only through `--project-dir`.
+  // this repo's root — never a project root, which is reached only through
+  // `--project-dir`/`--project`.
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: ["--import", "tsx", "src/cli.ts", "server", "--project-dir", root],
+    args: serverArgs,
     cwd: repoRoot,
     stderr: "pipe",
   });
@@ -169,22 +284,35 @@ export async function startHarness(opts: HarnessOpts = {}): Promise<Harness> {
     stopped = true;
     // Ordered: close the client (which closes the transport and awaits the
     // child process closing) → await the transport's own onclose signal →
-    // only then remove the temp dir. Removing it while the child still holds
-    // an fs.watch on a file inside it is the failure mode this prevents.
+    // only then remove every temp root. Removing one while the child still
+    // holds an fs.watch on a file inside it is the failure mode this
+    // prevents (ADR 0025) — N-fold here, since the child watches every
+    // registered project's config path.
     await client.close();
     await childExited;
-    removeTempDir(root);
+    for (const root of Object.values(roots)) {
+      removeTempDir(root);
+    }
   }
 
   return {
     client,
-    root,
-    configPath,
+    get root() {
+      return soleValue(roots, "root");
+    },
+    get configPath() {
+      return soleValue(configPaths, "configPath");
+    },
+    roots,
+    configPaths,
     notifications,
     call,
     waitForNote,
     stop,
     stderr: () => Buffer.concat(stderrChunks).toString("utf-8"),
+    get pid() {
+      return transport.pid;
+    },
   };
 }
 
@@ -213,20 +341,38 @@ export function assertToolError(res: CallToolResult, needle: string): string {
 }
 
 /**
- * Extracts the `txId` from a mutate tool's `mcpContent` footer. Anchors on
- * the LAST line specifically: the body above it can contain arbitrary
- * override file paths, and a loose `/txId: (\d+)/` search across the whole
- * text could match one of those instead of the actual footer.
+ * Anchors on the LAST line of a mutate tool's `mcpContent` footer: the body
+ * above it can contain arbitrary override file paths, and a loose search
+ * across the whole text could match one of those instead of the actual
+ * footer. Shared by `txTokenOf`/`txCounterOf` below.
+ *
+ * This is the harness's OWN regex — deliberately not
+ * `@genvidtech/mcp-utils`'s `parseTxToken`. Issue #77 row X7: importing the
+ * shipped codec here would reduce every txId assertion to "the codec agrees
+ * with itself," which proves nothing about the wire contract this repo
+ * actually depends on.
  */
-export function txIdOf(res: CallToolResult): number {
+function matchTxTokenLine(res: CallToolResult, caller: string): RegExpExecArray {
   const text = textOf(res);
   const lines = text.split("\n");
   const lastLine = lines[lines.length - 1] ?? "";
-  const match = /^txId: (\d+)$/.exec(lastLine);
+  const match = /^txId: ([^\s:]+):(\d+)$/.exec(lastLine);
   if (!match) {
-    assert.fail(`txIdOf: last line did not match /^txId: \\d+$/ — got: ${JSON.stringify(lastLine)}`);
+    assert.fail(`${caller}: last line did not match /^txId: <id>:<n>$/ — got: ${JSON.stringify(lastLine)}`);
   }
-  return Number(match[1]);
+  return match;
+}
+
+/** The full composite `<projectId>:<n>` token from a mutate tool's footer, e.g. `"alpha:3"`. */
+export function txTokenOf(res: CallToolResult): string {
+  const match = matchTxTokenLine(res, "txTokenOf");
+  return `${match[1]}:${match[2]}`;
+}
+
+/** The counter (`n`) half of a mutate tool's composite txId token — see `txTokenOf`. */
+export function txCounterOf(res: CallToolResult): number {
+  const match = matchTxTokenLine(res, "txCounterOf");
+  return Number(match[2]);
 }
 
 /**

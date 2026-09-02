@@ -8,6 +8,41 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+### Added
+- The MCP server can host more than one Construct 3 project root in a single
+  process (#77, ADR 0028). The `server` subcommand accepts a repeatable
+  `--project <id>=<path>` flag (explicit id) or a bare path (id derived from
+  the basename); with one or more given, they define the registry entirely
+  and `--project-dir`/`C3_PROJECT_DIR`/`project.c3proj` discovery do not
+  apply. With neither `--project` nor `--project-dir` given, `server` now
+  registers **every** discovered `project.c3proj` root instead of erroring on
+  ambiguity — the five other subcommands (`generate`, `list-uncategorized`,
+  `list-stale-overrides`, `validate-editor`, `addon-inventory`) are
+  unchanged and still error when discovery finds two or more roots.
+- A 15th tool, `list-projects`, lists every registered project's id and
+  resolved root. It is the only tool exempt from the new `project` selector.
+- Every other tool (14 of the now-15) gains an optional `project` parameter
+  naming which registered project to target. Omitted, it resolves to the
+  sole registered project when exactly one is registered, and returns an
+  error enumerating the known ids when more than one is registered.
+
+### Changed
+- **Breaking:** `txId` is now a composite `<projectId>:<n>` string, not a
+  bare integer, minted and compared through `@genvidtech/mcp-utils`'s codec.
+  Both `set-overrides` and `remove-overrides`' input schemas now type `txId`
+  as a string; a client that passes an integer is rejected at schema
+  validation rather than at the optimistic-concurrency comparison.
+- Bump `@genvidtech/mcp-utils` floor to `^0.9.0` (#77) — load-bearing for
+  `resolveRootFolders`, `isValidProjectId`, and the `formatTxToken`/
+  `compareTxToken` composite-txId codec the multi-project registry is built
+  on.
+
+### Fixed
+- The README's MCP server section documented 13 tools and omitted
+  `addon-inventory` from both the CLI subcommand table and the tool listing
+  — a pre-existing miscount unrelated to this release, now corrected to 15
+  (14 pre-existing + `list-projects`).
+
 ## [0.9.0] - 2026-08-26
 
 ### Changed

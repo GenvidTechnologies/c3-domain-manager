@@ -44,7 +44,7 @@ describe("mcp server — read-only tools", function () {
     });
   });
 
-  describe("B6: all 14 tools registered and reachable", function () {
+  describe("B6: all 15 tools registered and reachable", function () {
     let h: Harness;
 
     before(async function () {
@@ -57,9 +57,9 @@ describe("mcp server — read-only tools", function () {
       await h?.stop();
     });
 
-    it("client.listTools() returns 14 tools", async function () {
+    it("client.listTools() returns 15 tools", async function () {
       const { tools } = await h.client.listTools();
-      assert.strictEqual(tools.length, 14);
+      assert.strictEqual(tools.length, 15);
     });
   });
 

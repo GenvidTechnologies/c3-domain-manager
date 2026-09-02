@@ -59,14 +59,15 @@
 		"test:noexit": "mocha --timeout 5000 --import=tsx --require ./test/setup.ts 'test/**/*.test.ts'",
 		"lint": "eslint --ext .ts --max-warnings 0 src/ test/",
 		"typecheck": "tsc -p tsconfig.test.json --noEmit",
-		"corpus:scan": "node scripts/scan-corpus.mjs"
+		"corpus:scan": "node scripts/scan-corpus.mjs",
+		"verify:behaviour-preservation": "node scripts/verify-behaviour-preservation.mjs"
 	},
 	"engines": {
 		"node": ">=22"
 	},
 	"dependencies": {
 		"@genvidtech/c3source": "^2.0.0",
-		"@genvidtech/mcp-utils": "^0.8.0",
+		"@genvidtech/mcp-utils": "^0.9.0",
 		"@modelcontextprotocol/sdk": "^1.27.1",
 		"yargs": "^17.7.2",
 		"zod": "^3.23.0"

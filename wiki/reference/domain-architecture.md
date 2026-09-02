@@ -233,14 +233,14 @@ Relative paths for `--config` and `--extracted` resolve against the **project ro
 
 1. **`--project-dir <path>`** — explicit flag. Relative resolves against the current working directory; absolute used as-is. No containment restriction — `../sibling` is valid.
 2. **`C3_PROJECT_DIR` environment variable** — same resolution rules as the flag.
-3. **Discovery** — the current directory and its immediate children (depth 1) are searched for a directory or file named `project.c3proj` (the Construct 3 project manifest). Exactly one match becomes the project root. Two or more matches produce an ambiguity error: the command prints it and exits non-zero, requiring the user to pass `--project-dir` explicitly. This is the intended behavior for a repository hosting multiple C3 projects.
+3. **Discovery** — the current directory and its immediate children (depth 1) are searched for a directory or file named `project.c3proj` (the Construct 3 project manifest). The five single-root subcommands (`generate`, `list-uncategorized`, `list-stale-overrides`, `validate-editor`, `addon-inventory`) resolve through `resolveProjectRoot`: exactly one match becomes the project root, and two or more matches produce an ambiguity error — the command prints it and exits non-zero, requiring the user to pass `--project-dir` explicitly. This is the intended behavior for a repository hosting multiple C3 projects. The `server` subcommand resolves through the plural `resolveProjectRoots` instead: two or more matches are not an error there — every discovered root is registered as a separate project (see the MCP server paragraph below).
 4. **Fallback** — the current working directory (preserves prior behavior when no project marker is found).
 
 This resolution is implemented by `resolveProjectRoot` in `src/adapters/locations.ts`, a thin wrapper over `@genvidtech/mcp-utils`'s `resolveRootFolder` that passes `PROJECT_MANIFEST_FILE` (from `@genvidtech/c3source`) as the discovery marker.
 
 **Ephemeral mode** — pass `none` as the `--extracted` value to route output into a temporary directory that is automatically deleted when the command finishes (or when the MCP server shuts down on SIGINT/SIGTERM). This is useful as a no-side-effect validation pass: generation runs but leaves no files behind in the project tree.
 
-When using the MCP server, the resolved locations are forwarded from the CLI `server` command via `startServer(loc: ResolvedLocations)`. The MCP server itself does not re-run discovery — the root is fixed at startup.
+When using the MCP server, the CLI `server` command resolves one or more project roots — via `--project-dir`/`C3_PROJECT_DIR`/discovery (item 3 above), or a repeatable `--project <id>=<path>` flag naming roots explicitly — builds a `ProjectRegistry<ProjectContext>` via `buildRegistry` in `src/adapters/locations.ts`, and passes it to `startServer(registry)`. Every MCP tool except `list-projects` accepts an optional `project` selector naming which registered project to target: omitted, it resolves to the sole registered project when exactly one is registered, and returns an error enumerating the known ids when more than one is. `list-projects` itself takes no selector — it lists every registered project's id and root so a client can discover which id to pass elsewhere.
 
 ## Cross-domain coupling sources
 
