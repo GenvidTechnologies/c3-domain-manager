@@ -178,4 +178,20 @@ describe("buildServerProjectSpecs", () => {
     });
     assert.deepEqual(specs, [{ root, config: abs, extracted: undefined }]);
   });
+
+  it("R1: rejects an absolute --config with no --project values when resolveRoots yields two roots", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-cli-flag-multi-abs", "game-f");
+    const rootB = path.join(os.tmpdir(), "c3dm-cli-flag-multi-abs", "game-g");
+    const abs = path.resolve(os.tmpdir(), "abs-config.json");
+    assert.throws(
+      () =>
+        buildServerProjectSpecs({
+          projectValues: [],
+          resolveRoots: () => [rootA, rootB],
+          config: abs,
+          extracted: undefined,
+        }),
+      /--config/,
+    );
+  });
 });

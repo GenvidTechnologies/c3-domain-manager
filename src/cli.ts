@@ -82,20 +82,20 @@ yargs(hideBin(process.argv))
       }),
     async (argv) => {
       const projectValues = (argv.project as string[] | undefined) ?? [];
-      let specs: ProjectSpec[];
+      const { startServer, emitLog, expectedChanges } = await import("./mcp/server.js");
+      let registry: ReturnType<typeof buildRegistry>;
       try {
-        specs = buildServerProjectSpecs({
+        const specs: ProjectSpec[] = buildServerProjectSpecs({
           projectValues,
           resolveRoots: () => resolveRootsOrExit(argv["project-dir"] as string | undefined),
           config: argv.config as string | undefined,
           extracted: argv.extracted as string | undefined,
         });
+        registry = buildRegistry(specs, { emit: emitLog, expected: expectedChanges });
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err));
         process.exit(1);
       }
-      const { startServer, emitLog, expectedChanges } = await import("./mcp/server.js");
-      const registry = buildRegistry(specs, { emit: emitLog, expected: expectedChanges });
       await startServer(registry);
     },
   )

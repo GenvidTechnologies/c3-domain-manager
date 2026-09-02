@@ -141,22 +141,42 @@ export function deriveProjectId(root: string): string {
  * emits a warning to stderr naming the collision, so an id shift is never
  * silent.
  *
+ * The suffixed candidate is checked against every id already claimed
+ * (bare or suffixed) and bumped past any that's taken, so this can never
+ * *manufacture* a collision it then has to reject: roots basenamed
+ * `game`, `game`, `game-2` (in that order) derive `game`, `game-2`,
+ * `game-2-2` — not `game`, `game-2`, `game-2` — because the third root's
+ * own bare basename `game-2` is already claimed by the second root's
+ * suffixed id, so it is bumped one further rather than colliding with it.
+ *
  * Used only for specs lacking an explicit id override (see `buildRegistry`
  * below): an explicit id is taken verbatim and is never renamed by this
- * function — two specs that explicitly collide on the same id are a
- * `buildRegistry`-level rejection, not something this function papers over.
+ * function. This function's collision-avoidance is scoped to *derived* ids
+ * only — it has no visibility into explicit-id specs, which `buildRegistry`
+ * assembles separately. So a derived id can still collide with an explicit
+ * one; that stays a `buildRegistry`-level rejection (the existing duplicate-
+ * id check), by deliberate choice — silently steering a derived id away from
+ * a user-authored explicit id would hide a real naming conflict instead of
+ * surfacing it, which is the opposite of what the warning here is for.
  */
 export function deriveUniqueProjectIds(roots: string[]): string[] {
   const seenCounts = new Map<string, number>();
+  const claimed = new Set<string>();
   return roots.map((root) => {
     const base = deriveProjectId(root);
-    const occurrence = (seenCounts.get(base) ?? 0) + 1;
+    let occurrence = (seenCounts.get(base) ?? 0) + 1;
+    let id = occurrence === 1 ? base : `${base}-${occurrence}`;
+    while (claimed.has(id)) {
+      occurrence++;
+      id = `${base}-${occurrence}`;
+    }
     seenCounts.set(base, occurrence);
-    if (occurrence === 1) return base;
-    const id = `${base}-${occurrence}`;
-    console.error(
-      `[c3-domain-manager] Warning: project id '${base}' derived from more than one root (latest: '${root}') — using '${id}' instead`,
-    );
+    claimed.add(id);
+    if (id !== base) {
+      console.error(
+        `[c3-domain-manager] Warning: project id '${base}' derived from more than one root (latest: '${root}') — using '${id}' instead`,
+      );
+    }
     return id;
   });
 }
@@ -202,7 +222,7 @@ export interface BuildRegistryOptions {
  * duplicate-`configPath` guard below meaningful) — and returns a populated
  * `ProjectRegistry`.
  *
- * Performs exactly three validations here (issue #77 acceptance row S4):
+ * Performs exactly four validations here (issue #77 acceptance row S4):
  *   - every id (derived or explicit) is checked against `isValidProjectId`
  *     and rejected if invalid — in practice this means it contains a colon
  *     (which would collide with the composite txId token's `<projectId>:<n>`
@@ -215,6 +235,21 @@ export interface BuildRegistryOptions {
  *     file via a shared absolute `--config` override. Either way, two
  *     `ProjectContext`s watching and writing the same file would cross-
  *     consume each other's `ExpectedChanges` suppression entries.
+ *   - duplicate `extractedDir`s are rejected, naming both projects' ids, the
+ *     same way and for the same reason as `configPath` above: two projects
+ *     both writing `<extractedDir>/domain-index/` would have `regenerate` on
+ *     either silently wipe and overwrite the other's index, and a later
+ *     read-domain-index for the victim would return the wrong project's
+ *     content — with no error anywhere. `cliProjectFlags.ts`'s
+ *     `assertRelativeOverride` catches the *absolute*-override form of this
+ *     early with a clearer message, but does not (and by design cannot)
+ *     catch a *relative* `--extracted` that converges from two distinct
+ *     roots onto the same absolute path — this check is what catches that
+ *     case, and stays the real guarantee regardless of how the paths were
+ *     produced. The `--extracted none` ephemeral form is exempt in practice
+ *     without any special-casing: `resolveLocations` calls `mkTempDir()`
+ *     once per spec, which yields a distinct directory every time, so two
+ *     ephemeral specs never collide here.
  */
 export function buildRegistry(specs: ProjectSpec[], opts: BuildRegistryOptions): ProjectRegistry<ProjectContext> {
   const absRoots = specs.map((spec) => path.resolve(spec.root));
@@ -252,6 +287,7 @@ export function buildRegistry(specs: ProjectSpec[], opts: BuildRegistryOptions):
 
   const expected = opts.expected ?? new ExpectedChanges();
   const configPathOwner = new Map<string, string>(); // configPath -> owning id
+  const extractedDirOwner = new Map<string, string>(); // extractedDir -> owning id
   const entries: Array<[string, ProjectContext]> = [];
 
   for (let i = 0; i < specs.length; i++) {
@@ -259,11 +295,19 @@ export function buildRegistry(specs: ProjectSpec[], opts: BuildRegistryOptions):
     const id = ids[i];
     const loc = resolveLocations({ config: spec.config, extracted: spec.extracted }, absRoots[i], opts.mkTempDir);
 
-    const priorId = configPathOwner.get(loc.configPath);
-    if (priorId !== undefined) {
-      throw new Error(`duplicate configPath '${loc.configPath}': shared by projects '${priorId}' and '${id}'`);
+    const priorConfigId = configPathOwner.get(loc.configPath);
+    if (priorConfigId !== undefined) {
+      throw new Error(`duplicate configPath '${loc.configPath}': shared by projects '${priorConfigId}' and '${id}'`);
     }
     configPathOwner.set(loc.configPath, id);
+
+    const priorExtractedId = extractedDirOwner.get(loc.extractedDir);
+    if (priorExtractedId !== undefined) {
+      throw new Error(
+        `duplicate extractedDir '${loc.extractedDir}': shared by projects '${priorExtractedId}' and '${id}'`,
+      );
+    }
+    extractedDirOwner.set(loc.extractedDir, id);
 
     entries.push([id, new ProjectContext({ id, loc, emit: opts.emit, expected })]);
   }

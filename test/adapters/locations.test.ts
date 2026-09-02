@@ -559,4 +559,87 @@ describe("buildRegistry", () => {
       /duplicate project id 'alpha'/,
     );
   });
+
+  it("R2a: rejects two specs sharing one absolute --extracted, naming both ids", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-br-6a", "alpha-root");
+    const rootB = path.join(os.tmpdir(), "c3dm-br-6a", "beta-root");
+    const sharedExtracted = path.join(os.tmpdir(), "c3dm-br-6a", "shared-extracted");
+
+    try {
+      buildRegistry(
+        [
+          { root: rootA, id: "alpha", extracted: sharedExtracted },
+          { root: rootB, id: "beta", extracted: sharedExtracted },
+        ],
+        { emit: noopEmit },
+      );
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.include(message, "duplicate extractedDir");
+      assert.include(message, "alpha");
+      assert.include(message, "beta");
+    }
+  });
+
+  it("R2b: rejects two sibling roots whose relative --extracted converges on the same absolute path", () => {
+    const parent = path.join(os.tmpdir(), "c3dm-br-6b");
+    const rootA = path.join(parent, "alpha-root");
+    const rootB = path.join(parent, "beta-root");
+
+    try {
+      buildRegistry(
+        [
+          { root: rootA, id: "alpha", extracted: "../shared-extracted" },
+          { root: rootB, id: "beta", extracted: "../shared-extracted" },
+        ],
+        { emit: noopEmit },
+      );
+      assert.fail("expected buildRegistry to throw");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.include(message, "duplicate extractedDir");
+      assert.include(message, "alpha");
+      assert.include(message, "beta");
+    }
+  });
+
+  it("R2 paired survival: two --extracted none specs build with distinct ephemeral temp dirs", () => {
+    const rootA = path.join(os.tmpdir(), "c3dm-br-6c", "alpha-root");
+    const rootB = path.join(os.tmpdir(), "c3dm-br-6c", "beta-root");
+
+    const registry = buildRegistry(
+      [
+        { root: rootA, id: "alpha", extracted: NO_EXTRACTED },
+        { root: rootB, id: "beta", extracted: NO_EXTRACTED },
+      ],
+      { emit: noopEmit },
+    );
+    assert.deepEqual(registry.ids(), ["alpha", "beta"]);
+    const alphaCtx = registry.resolve("alpha");
+    const betaCtx = registry.resolve("beta");
+    assert.isFalse(isMcpError(alphaCtx));
+    assert.isFalse(isMcpError(betaCtx));
+    if (!isMcpError(alphaCtx) && !isMcpError(betaCtx)) {
+      assert.notEqual(alphaCtx.extractedDir, betaCtx.extractedDir);
+    }
+  });
+});
+
+describe("deriveUniqueProjectIds — R3", () => {
+  it("never manufactures a collision it then rejects: game, game, game-2 derive three distinct ids", () => {
+    const parent = path.join(os.tmpdir(), "c3dm-r3");
+    const rootA = path.join(parent, "a", "game");
+    const rootB = path.join(parent, "b", "game");
+    const rootC = path.join(parent, "c", "game-2");
+
+    const ids = deriveUniqueProjectIds([rootA, rootB, rootC]);
+    assert.equal(new Set(ids).size, 3, `expected three distinct ids, got: ${JSON.stringify(ids)}`);
+
+    const registry = buildRegistry(
+      [{ root: rootA }, { root: rootB }, { root: rootC }],
+      { emit: noopEmit },
+    );
+    assert.equal(new Set(registry.ids()).size, 3);
+  });
 });

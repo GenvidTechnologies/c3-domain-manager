@@ -71,7 +71,13 @@ export function assertRelativeOverride(
  * -> `resolveLocations` rebases a relative value against each spec's own
  * root, so passing the same relative string to N specs already produces N
  * per-project paths with no extra plumbing here. An absolute value is
- * rejected by `assertRelativeOverride` once `projectValues.length > 1`.
+ * rejected by `assertRelativeOverride`, keyed on the *resolved spec count* —
+ * not on `projectValues.length` — once that count exceeds one. This matters
+ * because the zero-`--project` branch (below) resolves its spec count from
+ * `resolveRoots()`, which can itself return more than one root (multi-root
+ * `project.c3proj` discovery via `resolveRootsOrExit`); keying the guard on
+ * `projectValues.length` would leave that branch unguarded even though it is
+ * the one path that can actually produce N > 1.
  */
 export function buildServerProjectSpecs(opts: {
   projectValues: string[];
@@ -80,10 +86,11 @@ export function buildServerProjectSpecs(opts: {
   extracted?: string;
 }): ProjectSpec[] {
   const { projectValues, resolveRoots, config, extracted } = opts;
-  if (projectValues.length === 0) {
-    return resolveRoots().map((root) => ({ root, config, extracted }));
-  }
-  assertRelativeOverride("config", config, projectValues.length);
-  assertRelativeOverride("extracted", extracted, projectValues.length);
-  return projectValues.map((value) => ({ ...parseProjectFlagValue(value), config, extracted }));
+  const specs: ProjectSpec[] =
+    projectValues.length === 0
+      ? resolveRoots().map((root) => ({ root, config, extracted }))
+      : projectValues.map((value) => ({ ...parseProjectFlagValue(value), config, extracted }));
+  assertRelativeOverride("config", config, specs.length);
+  assertRelativeOverride("extracted", extracted, specs.length);
+  return specs;
 }
