@@ -80,6 +80,26 @@ function notFound(tool: string, hint: string): { content: { type: "text"; text: 
   };
 }
 
+/**
+ * Optimistic-concurrency guard shared by every mutate tool: returns a
+ * rejection result when `expected` names a token other than `ctx`'s current
+ * one, or `undefined` when the write may proceed (including when the caller
+ * supplied no token at all, which opts out of the check).
+ *
+ * Pure — it reads `ctx.watcher.txId` and acquires no lock. `registerProjectTool`
+ * already holds `ctx.rwlock`'s write lock around every call site, and
+ * `ReadWriteLock` has neither reentrancy nor owner tracking, so acquiring it
+ * here would deadlock.
+ */
+function checkTxToken(expected: string | undefined, ctx: ProjectContext): CallToolResult | undefined {
+  if (expected === undefined) return undefined;
+  if (compareTxToken(expected, ctx.id, ctx.watcher.txId)) return undefined;
+  return {
+    content: [{ type: "text", text: `State changed: expected txId ${expected}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
+    isError: true,
+  };
+}
+
 const PAGINATION_PARAMS = {
   offset: z.number().int().min(1).optional().describe("Start line (1-based). Omit to start from beginning."),
   limit: z.number().int().min(1).optional().describe("Max lines to return. Omit to return all."),
@@ -296,12 +316,8 @@ registerProjectTool(
   "write",
   async (ctx, { overrides: newOverrides, txId: expectedTxId }) =>
     withMcpErrors(async (): Promise<CallToolResult> => {
-      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
-        return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
-          isError: true,
-        };
-      }
+      const rejection = checkTxToken(expectedTxId, ctx);
+      if (rejection) return rejection;
       const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       const validNames = collectValidDomainNames(config);
@@ -351,12 +367,8 @@ registerProjectTool(
   "write",
   async (ctx, { paths, txId: expectedTxId }) =>
     withMcpErrors(async (): Promise<CallToolResult> => {
-      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
-        return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
-          isError: true,
-        };
-      }
+      const rejection = checkTxToken(expectedTxId, ctx);
+      if (rejection) return rejection;
       const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       if (!config.overrides || Object.keys(config.overrides).length === 0) {
