@@ -186,7 +186,7 @@ A rejection tells you which of three things went wrong, because the remedies dif
 |---|---|---|
 | **Stale** — the counter moved | `State changed: expected txId game-a:2, got game-a:3. Re-read state and retry.` | Call `get-state` and retry with the fresh token. |
 | **Wrong project** — the token names another registered project | `State changed: expected txId game-b:0, got game-a:1. That token names project 'game-b', but this call targets 'game-a'. Re-read state and retry.` | Re-read the token for the project you meant, or correct the `project` selector. |
-| **Malformed** — the token is not a well-formed `<projectId>:<counter>` | `Invalid txId 'game-a:03' — the counter (the part after the ':') must be a canonical non-negative integer — no leading zeros, signs, whitespace, exponent notation or hex. Call get-state for the current txId.` | Do **not** retry: nothing about the server's state will make a malformed token parse. Fix how the token is produced — use it exactly as `get-state` returned it. |
+| **Malformed** — the token is not a well-formed `<projectId>:<counter>` | `Invalid txId 'game-a:03' — the counter (everything after the first ':') must be a canonical non-negative integer — no leading zeros, signs, whitespace, exponent notation or hex. Call get-state for the current txId.` | Do **not** retry: nothing about the server's state will make a malformed token parse. Fix how the token is produced — use it exactly as `get-state` returned it. |
 
 A malformed token is reported distinctly from a stale one precisely because retrying is futile in that case.
 

@@ -246,7 +246,10 @@ upstream contract we do not consume.
   `inputSchema` key added — so this needs no `c3-explorer` allow-list
   reconciliation in `GenvidTechnologies/claude-code-plugin-gvt-construct3`
   beyond the routine exact-pin bump when a release carrying it ships.
-- `test/adapters/txToken.test.ts` now pins the discriminated result and four
-  measured reason values, so an upstream change to either the shape or the
-  reason mapping surfaces in this repo's suite rather than at a client holding
-  an incompatible token.
+- `test/adapters/txToken.test.ts` now pins the discriminated result and three
+  measured reason values — `no-separator`, `not-a-string` and
+  `invalid-counter-shape`, the last asserted at two inputs, so four assertions
+  over three values. The remaining two are the deliberately uncovered pair named
+  under Compromise above. An upstream change to either the shape or the reason
+  mapping therefore surfaces in this repo's suite rather than at a client
+  holding an incompatible token.

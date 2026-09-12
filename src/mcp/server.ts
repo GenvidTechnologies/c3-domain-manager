@@ -93,6 +93,10 @@ function notFound(tool: string, hint: string): { content: { type: "text"; text: 
  * without checking them, so a green suite says nothing about this — run
  * `npm run typecheck`.
  */
+// End-user-facing text, one per `TxTokenParseFailure` member. README.md's
+// "Optimistic concurrency" section quotes two of these verbatim as examples, and
+// nothing compares the two copies — reword a string here and update that section
+// in the same change.
 const TX_PARSE_FAILURE_TEXT: Record<TxTokenParseFailure, string> = {
   // Unreachable through the MCP surface: `txId` is `z.string().optional()` on
   // both mutate tools, so zod rejects a non-string with "Input validation
@@ -101,8 +105,11 @@ const TX_PARSE_FAILURE_TEXT: Record<TxTokenParseFailure, string> = {
   // a key per union member — do not delete it as dead code.
   "not-a-string": "it was not a string",
   "no-separator": "a txId is a composite `<projectId>:<counter>` token and this one has no ':' separator",
-  "invalid-project-id": "the project id (the part before the ':') must be non-empty and contain no ':' and no whitespace",
-  "invalid-counter-shape": "the counter (the part after the ':') must be a canonical non-negative integer — no leading zeros, signs, whitespace, exponent notation or hex",
+  // The split is on the FIRST ':', so the project id can never itself contain
+  // one — naming that as a possible cause would point a caller at something
+  // that cannot have happened. Only empty and whitespace are reachable here.
+  "invalid-project-id": "the project id (the part before the first ':') must be non-empty and contain no whitespace",
+  "invalid-counter-shape": "the counter (everything after the first ':') must be a canonical non-negative integer — no leading zeros, signs, whitespace, exponent notation or hex",
   "counter-out-of-range": "the counter is larger than the largest safe integer",
 };
 
@@ -357,7 +364,7 @@ registerProjectTool(
       overrides: z.record(z.string(), z.string())
         .describe("File path → domain/subdomain name"),
       txId: z.string().optional()
-        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — the write is rejected unless it matches this project's current token"),
     },
   },
   "write",
@@ -408,7 +415,7 @@ registerProjectTool(
       paths: z.array(z.string())
         .describe("File paths to remove from overrides"),
       txId: z.string().optional()
-        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — the write is rejected unless it matches this project's current token"),
     },
   },
   "write",
