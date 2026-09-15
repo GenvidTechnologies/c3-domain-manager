@@ -8,6 +8,8 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-15
+
 ### Changed
 - A malformed `txId` sent to `set-overrides`/`remove-overrides` is now
   diagnosed distinctly from a stale one (#79, ADR 0029). An unparseable token
@@ -299,7 +301,8 @@ There is also a stray unprefixed `0.1.0` tag (dated 2026-04-03, predating the
 `v`-prefixed `v0.1.0` tag above) left over from before the tag naming
 convention was adopted; it does not correspond to a separate release.
 
-[Unreleased]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.7.0...v0.8.0
