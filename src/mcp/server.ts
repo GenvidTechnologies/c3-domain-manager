@@ -4,8 +4,8 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, formatTxToken, compareTxToken, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
-import type { Logger } from "@genvidtech/mcp-utils";
+import { ExpectedChanges, exposeDocs, loadProjectConfig, isMcpError, mcpContent, paginatedContent, withMcpErrors, formatTxToken, parseTxToken, compareTxToken, READ_ONLY, REGENERATE, MUTATE } from "@genvidtech/mcp-utils";
+import type { Logger, TxTokenParseFailure } from "@genvidtech/mcp-utils";
 import { formatDomainConfig } from "../domain/formatting.js";
 import type { DomainConfigSection } from "../domain/formatting.js";
 import type { DomainConfig } from "../domain/types.js";
@@ -76,6 +76,80 @@ function isWithinDir(fullPath: string, dir: string): boolean {
 function notFound(tool: string, hint: string): { content: { type: "text"; text: string }[]; isError: true } {
   return {
     content: [{ type: "text", text: `${tool}: ${hint}` }],
+    isError: true,
+  };
+}
+
+/**
+ * End-user-facing explanation of each `parseTxToken` rejection reason, for
+ * the malformed-token branch of `checkTxToken` below. The text is returned
+ * verbatim to an MCP client, so it describes the wire shape rather than the
+ * codec's internals.
+ *
+ * The `Record<TxTokenParseFailure, string>` annotation is the only thing
+ * enforcing exhaustiveness, and it is checked by `tsc` alone: an upstream
+ * addition to the union becomes a missing-property error here, a removal an
+ * excess-property one. `npm test` runs through `tsx`, which strips types
+ * without checking them, so a green suite says nothing about this — run
+ * `npm run typecheck`.
+ */
+// End-user-facing text, one per `TxTokenParseFailure` member. README.md's
+// "Optimistic concurrency" section quotes two of these verbatim as examples, and
+// nothing compares the two copies — reword a string here and update that section
+// in the same change.
+const TX_PARSE_FAILURE_TEXT: Record<TxTokenParseFailure, string> = {
+  // Unreachable through the MCP surface: `txId` is `z.string().optional()` on
+  // both mutate tools, so zod rejects a non-string with "Input validation
+  // error" before this handler runs (pinned by test/mcp/mutation.test.ts's
+  // schema-boundary case). Kept because the Record annotation above requires
+  // a key per union member — do not delete it as dead code.
+  "not-a-string": "it was not a string",
+  "no-separator": "a txId is a composite `<projectId>:<counter>` token and this one has no ':' separator",
+  // The split is on the FIRST ':', so the project id can never itself contain
+  // one — naming that as a possible cause would point a caller at something
+  // that cannot have happened. Only empty and whitespace are reachable here.
+  "invalid-project-id": "the project id (the part before the first ':') must be non-empty and contain no whitespace",
+  "invalid-counter-shape": "the counter (everything after the first ':') must be a canonical non-negative integer — no leading zeros, signs, whitespace, exponent notation or hex",
+  "counter-out-of-range": "the counter is larger than the largest safe integer",
+};
+
+/**
+ * Optimistic-concurrency guard shared by every mutate tool: returns a
+ * rejection result when `expected` names a token other than `ctx`'s current
+ * one, or `undefined` when the write may proceed (including when the caller
+ * supplied no token at all, which opts out of the check).
+ *
+ * `compareTxToken` stays the sole authority on accept/reject; `parseTxToken`'s
+ * result is used only to *diagnose* a rejection three ways — malformed,
+ * wrong project, stale counter. That split is what makes this a pure
+ * rendering change: `compareTxToken`'s body is `parsed.ok && …`, so every
+ * token routed to the malformed branch below already compared `false`. Do
+ * not reimplement the comparison from `parsed` — a second comparison beside
+ * the shared codec is exactly what issue #77 extracted the codec to avoid.
+ *
+ * Pure — it reads `ctx.watcher.txId` and acquires no lock. `registerProjectTool`
+ * already holds `ctx.rwlock`'s write lock around every call site, and
+ * `ReadWriteLock` has neither reentrancy nor owner tracking, so acquiring it
+ * here would deadlock.
+ */
+function checkTxToken(expected: string | undefined, ctx: ProjectContext): CallToolResult | undefined {
+  if (expected === undefined) return undefined;
+  const parsed = parseTxToken(expected);
+  if (!parsed.ok) {
+    return {
+      content: [{ type: "text", text: `Invalid txId '${expected}' — ${TX_PARSE_FAILURE_TEXT[parsed.reason]}. Call get-state for the current txId.` }],
+      isError: true,
+    };
+  }
+  if (compareTxToken(expected, ctx.id, ctx.watcher.txId)) return undefined;
+  // Appended, never substituted: the stale-token prefix up to and including
+  // `got <token>.` is asserted as a contiguous substring by
+  // test/mcp/multiProjectIsolation.test.ts's cross-project row.
+  const crossProject = parsed.projectId !== ctx.id
+    ? ` That token names project '${parsed.projectId}', but this call targets '${ctx.id}'.`
+    : "";
+  return {
+    content: [{ type: "text", text: `State changed: expected txId ${expected}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}.${crossProject} Re-read state and retry.` }],
     isError: true,
   };
 }
@@ -290,18 +364,14 @@ registerProjectTool(
       overrides: z.record(z.string(), z.string())
         .describe("File path → domain/subdomain name"),
       txId: z.string().optional()
-        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — the write is rejected unless it matches this project's current token"),
     },
   },
   "write",
   async (ctx, { overrides: newOverrides, txId: expectedTxId }) =>
     withMcpErrors(async (): Promise<CallToolResult> => {
-      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
-        return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
-          isError: true,
-        };
-      }
+      const rejection = checkTxToken(expectedTxId, ctx);
+      if (rejection) return rejection;
       const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       const validNames = collectValidDomainNames(config);
@@ -345,18 +415,14 @@ registerProjectTool(
       paths: z.array(z.string())
         .describe("File paths to remove from overrides"),
       txId: z.string().optional()
-        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — rejected if stale"),
+        .describe("Expected txId (composite `<projectId>:<n>` token, from get-state) for optimistic concurrency — the write is rejected unless it matches this project's current token"),
     },
   },
   "write",
   async (ctx, { paths, txId: expectedTxId }) =>
     withMcpErrors(async (): Promise<CallToolResult> => {
-      if (expectedTxId !== undefined && !compareTxToken(expectedTxId, ctx.id, ctx.watcher.txId)) {
-        return {
-          content: [{ type: "text", text: `State changed: expected txId ${expectedTxId}, got ${formatTxToken(ctx.id, ctx.watcher.txId)}. Re-read state and retry.` }],
-          isError: true,
-        };
-      }
+      const rejection = checkTxToken(expectedTxId, ctx);
+      if (rejection) return rejection;
       const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       if (!config.overrides || Object.keys(config.overrides).length === 0) {

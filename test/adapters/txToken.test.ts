@@ -1,6 +1,6 @@
 import { describe, it } from "mocha";
 import { assert } from "chai";
-import { formatTxToken, parseTxToken, compareTxToken, isValidProjectId } from "@genvidtech/mcp-utils";
+import { formatTxToken, parseTxToken, compareTxToken, isValidProjectId, type TxTokenParseResult, type TxTokenParseFailure } from "@genvidtech/mcp-utils";
 
 /**
  * Pins the `<projectId>:<n>` wire format this repo publishes (README.md's
@@ -14,6 +14,16 @@ import { formatTxToken, parseTxToken, compareTxToken, isValidProjectId } from "@
  * asserting *our* contract, not re-testing someone else's library — the
  * codec's implementation happening to live in a dependency doesn't change
  * whose format it is.
+ *
+ * Since mcp-utils 0.10.0, `parseTxToken` answers with a discriminated result
+ * — `{ ok: true, projectId, n }` on success, `{ ok: false, reason }` on
+ * rejection — where it used to answer with the parsed pair `| null`. So each
+ * rejection below pins its specific `reason`, not merely the fact of
+ * rejection. That is the same contract argument one level down: this server
+ * renders those reasons into the user-visible error a rejected `txId`
+ * produces, so an upstream relabel — `"alpha:03"` moving from
+ * `invalid-counter-shape` to `counter-out-of-range`, say — would change this
+ * server's output, not just an internal enum of someone else's.
  */
 
 describe("txToken codec (@genvidtech/mcp-utils)", () => {
@@ -40,26 +50,36 @@ describe("txToken codec (@genvidtech/mcp-utils)", () => {
   });
 
   describe("parseTxToken", () => {
-    it("parses a well-formed token into { projectId, n }", () => {
-      assert.deepStrictEqual(parseTxToken("alpha:3"), { projectId: "alpha", n: 3 });
+    // Asserts the rejection arm and hands back its `reason`. `assert.isFalse`
+    // already throws on a success arm, so the `throw` is unreachable at
+    // runtime — it is there to discharge the union for TypeScript, which
+    // cannot narrow from a chai assertion.
+    const failureReason = (result: TxTokenParseResult): TxTokenParseFailure => {
+      assert.isFalse(result.ok, "expected the token to be rejected");
+      if (result.ok) throw new Error("unreachable");
+      return result.reason;
+    };
+
+    it("parses a well-formed token into the { ok: true, projectId, n } arm", () => {
+      assert.deepStrictEqual(parseTxToken("alpha:3"), { ok: true, projectId: "alpha", n: 3 });
     });
 
-    it("returns null, and does not throw, on malformed input", () => {
-      assert.strictEqual(parseTxToken("garbage"), null);
+    it("rejects malformed input as `no-separator`, and does not throw", () => {
+      assert.strictEqual(failureReason(parseTxToken("garbage")), "no-separator");
     });
 
-    it("returns null on non-string input, and does not throw", () => {
+    it("rejects non-string input as `not-a-string`, and does not throw", () => {
       // Cast past the type system: a stale-write guard must survive a
       // client that ignores the wire type, not just a well-typed caller.
-      assert.strictEqual(parseTxToken(undefined as unknown as string), null);
+      assert.strictEqual(failureReason(parseTxToken(undefined as unknown as string)), "not-a-string");
     });
 
-    it("returns null on a token with more than one delimiter (ids cannot contain ':', so the shape is unambiguous)", () => {
-      assert.strictEqual(parseTxToken("a:b:c"), null);
+    it("rejects a token with more than one delimiter as `invalid-counter-shape` (ids cannot contain ':', so the shape is unambiguous)", () => {
+      assert.strictEqual(failureReason(parseTxToken("a:b:c")), "invalid-counter-shape");
     });
 
-    it("returns null on a non-canonical counter with a leading zero", () => {
-      assert.strictEqual(parseTxToken("alpha:03"), null);
+    it("rejects a non-canonical counter with a leading zero as `invalid-counter-shape`", () => {
+      assert.strictEqual(failureReason(parseTxToken("alpha:03")), "invalid-counter-shape");
     });
   });
 

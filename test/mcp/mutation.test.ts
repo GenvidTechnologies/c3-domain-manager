@@ -154,6 +154,24 @@ describe("mcp server — mutation trajectory", function () {
       });
       assertToolError(res, "Input validation error");
     });
+
+    it("set-overrides with a malformed txId is rejected as malformed, not as stale", async function () {
+      // `"alpha:03"` is a string, so it clears the schema boundary above and
+      // reaches the concurrency guard — where its leading-zero counter fails
+      // parsing before any project/counter comparison happens. Written as a
+      // plain literal rather than minted with the shipped codec, which this
+      // file must not import (issue #77 row X7, see the header comment).
+      //
+      // The notInclude is the load-bearing half: before the three-way
+      // diagnosis landed this input produced the generic "State changed …"
+      // text, so a rejection that merely errors is not enough.
+      const res = await h.call("set-overrides", {
+        overrides: { "eventSheets/delta/w.json": "Domain0" },
+        txId: "alpha:03",
+      });
+      const text = assertToolError(res, "Invalid txId");
+      assert.notInclude(text, "State changed");
+    });
   });
 
   describe("K3: #68 one self-write, one txId bump", function () {

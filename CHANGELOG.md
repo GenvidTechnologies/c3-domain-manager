@@ -8,6 +8,24 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+### Changed
+- A malformed `txId` sent to `set-overrides`/`remove-overrides` is now
+  diagnosed distinctly from a stale one (#79, ADR 0029). An unparseable token
+  previously rendered `State changed: expected …, got …`, which is false and
+  directs the caller to re-read state and retry — a remedy that can never
+  work, since the token generator is what is broken. It now renders
+  `Invalid txId '<sent>' — <what is wrong with it>. Call get-state for the
+  current txId.` A token naming a different registered project keeps the
+  stale message and gains an appended clause naming both projects. Which
+  writes are accepted is unchanged: `compareTxToken` remains the sole
+  accept/reject authority and the parse result is used only to render.
+- Bump `@genvidtech/mcp-utils` floor to `^0.10.0` (#79) — load-bearing for
+  `parseTxToken`'s discriminated `{ ok: true; … } | { ok: false; reason }`
+  result and its `TxTokenParseFailure` union, which is what makes the
+  rejection diagnostic above expressible without re-deriving the token accept
+  set locally. `formatTxToken` and `compareTxToken`, the only two symbols
+  `src/` imported before this, did not change in 0.10.0.
+
 ## [0.10.0] - 2026-09-03
 
 ### Added
