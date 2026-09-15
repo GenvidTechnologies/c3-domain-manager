@@ -120,10 +120,36 @@ git push origin vX.Y.Z                    # this push triggers the publish workf
    Also call out a **resource-surface change** (a `docs:///` URI added, renamed, or
    removed) the same way — resources are a separate MCP capability from tools, so
    this callout is additional content inside the same follow-up issue, not a second
-   issue, and it does **not** touch the `c3-explorer` `tools:` allow-list. The next
-   publish's issue must name the reshape from this release: all 5 pre-existing
-   `docs:///` URIs renamed to path-shaped equivalents, and 27 decision-record URIs
-   added under `docs:///decisions/`.
+   issue, and it does **not** touch the `c3-explorer` `tools:` allow-list.
+
+   **Scope the issue by the *pin's* current version, not by the version you just
+   published.** Nothing here files that issue for you, so a release whose follow-up
+   was skipped leaves the pin two or more versions behind — and the next issue then
+   owes every surface change across the whole span, not just this release's. Read
+   the pin first and diff from *it*:
+
+   ```bash
+   gh api repos/GenvidTechnologies/claude-code-plugin-gvt-construct3/contents/plugin/.claude-plugin/plugin.json \
+     --jq .content | base64 -d | grep -A3 '"c3-domain-manager"'
+   ```
+
+   (Quote the key. A bare `c3-domain-manager` pattern also matches the plugin's
+   own `description` field, which names both bundled servers.)
+
+   Example: 0.10.1 was cut with the pin still at `0.9.0`, because 0.10.0's
+   follow-up had never been filed. So that one issue had to carry 0.10.0's new
+   `list-projects` tool — absent from `c3-explorer`'s allow-list, therefore
+   **uncallable** by that agent after a bare pin bump — alongside 0.10.1's own
+   content (issue
+   [#107](https://github.com/GenvidTechnologies/claude-code-plugin-gvt-construct3/issues/107)).
+
+   Do **not** leave a carry-forward note here naming a specific pending reshape for
+   "the next publish" to pick up. One such note (0.9.0's `docs:///` repath) was
+   discharged by downstream
+   [#89](https://github.com/GenvidTechnologies/claude-code-plugin-gvt-construct3/issues/89)
+   and then kept directing later releases to re-raise it, because nothing retires a
+   sentence like that once its release has shipped. Reading the pin gives the same
+   answer and cannot go stale.
 
 ## Notes & gotchas
 
