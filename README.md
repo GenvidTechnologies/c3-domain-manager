@@ -106,6 +106,14 @@ All subcommands share three global options:
 | `--config <path>` | `<project-root>/domain-config.json` | Path to `domain-config.json`. Relative paths resolve from the project root. |
 | `--extracted <path>` | `<project-root>/extracted` | Output directory for the generated domain index. Pass `none` for an ephemeral temp dir auto-cleaned on exit. |
 
+`generate` additionally accepts one option of its own:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--max-unclassified <n>` | none (no gate) | Fail the run with **exit code 2** when more than `<n>` files are unclassified. Omit the flag and there is no gate at all — the run reports its unclassified count and still exits 0, which is the historical behaviour. Use `0` to require full classification coverage, or the project's current count (see `list-uncategorized`) to ratchet the allowance down over time. |
+
+The gate is applied **after** the index is generated, so a failing run still leaves a complete `domain-index/` behind — the offending paths are printed on stdout and listed under `## Unclassified Files` in the generated `index.md`, which is what you need to fix the failure. Exit code 2 means the analysis ran and found a policy breach; exit code 1 keeps its existing meaning of "the command could not run" (an unresolvable project root, a bad `--config`, an invalid threshold). See [wiki/decisions/0030-classification-coverage-gate.md](wiki/decisions/0030-classification-coverage-gate.md).
+
 `server` additionally accepts a repeatable option, not shared by the other five subcommands:
 
 | Option | Default | Description |
@@ -170,7 +178,7 @@ The server auto-generates the domain index on startup if `extracted/domain-index
 
 | Tool | Description |
 |------|-------------|
-| `regenerate` | Re-run the domain index generator and clear the `domainDirty` flag. |
+| `regenerate` | Re-run the domain index generator and clear the `domainDirty` flag. Accepts an optional `maxUnclassified` — the same classification-coverage gate as the CLI's `--max-unclassified`, reported as an error result. The index is regenerated and `domainDirty` cleared either way; omit it and the response is unchanged. |
 
 ### Stale index warning
 
