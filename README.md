@@ -212,7 +212,7 @@ Key exports from `src/index.ts`:
 | Export | Module | Description |
 |--------|--------|-------------|
 | `classifyFile(path, fileType, config)` | `classification` | Classify one file path into a domain name |
-| `generateDomainIndex(root, extracted, configDir, configFileName, log)` → `Promise` | `domainGenerator` | Async I/O entry point — validates config via `DomainConfigSchema`, writes index |
+| `generateDomainIndex(root, extracted, configDir, configFileName, log)` → `Promise<ComputeDomainDataResult>` | `domainGenerator` | Async I/O entry point — validates config via `DomainConfigSchema`, writes index, and returns the same `{ domains, unclassified }` result the pure core returns |
 | `computeDomainData(root, config)` | `domainGenerator` | Pure computation — returns `DomainData[]` without I/O |
 | `listUncategorized(root, config)` | `domainAnalysis` | Return file/directory paths not covered by the config — shares its `scripts/` enumeration with the generator (see next row) |
 | `findScriptEntries(scriptsDir, config?)` | `domainGenerator` | Enumerate `scripts/` entries (files and collapsed directories) — consumed by both `computeDomainData` and `listUncategorized` |
