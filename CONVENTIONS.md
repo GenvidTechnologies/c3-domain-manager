@@ -109,6 +109,14 @@ The three scanners do not share one walk — scope is per-scanner (ADR-0041):
 
 All three walk the docs root (`docs/` by default, or the `paths['docs/TOC.md']`-derived root above) plus repo-root `CLAUDE.md`. Only `scanRetiredTokens` additionally walks `<wikiDir>/` — token drift there is otherwise unowned, since `maintain-wiki`'s `lint` verb has no retired-token check of its own, whereas `lint` already owns dead-wiki-links and orphaned pages, so those two scanners deliberately never widen. `<rawDir>/` is never walked by any scanner: it sits outside the docs walk at the default repo-root layout, and is explicitly excluded (at its resolved, anchored path, never a bare directory name) on the rare nested layout — either way it stays out because it legitimately holds retired tokens and dead links as part of its immutable captured-source record.
 
+The scope table's `<wikiDir>/` column for `scanBrokenLinks` and `scanOrphanedDocs` stays `no` even when a `docs/TOC.md` `paths` override puts the resolved docs root inside `<wikiDir>/` — a repo whose index lives at, say, `wiki/index.md`. That layout would otherwise deliver bundle pages to both scanners through the ordinary docs walk, quietly widening a boundary the table above already draws. Both scanners now decline that content instead (ADR-0053), enforcing the published contract rather than changing it:
+
+- When the resolved docs root falls inside `<wikiDir>/`, `scanOrphanedDocs` declines outright — it's a whole-corpus check, so there's no per-file residue left to look at — and reports the decline as an `info` finding instead of silently returning no findings.
+- `scanBrokenLinks` declines **individual files** that live inside `<wikiDir>/`, and keeps checking everything else its candidate set covers — including repo-root `CLAUDE.md`, which is a candidate file but is not itself a bundle page and isn't reached by `maintain-wiki lint`'s own `<wikiDir>/`-only walk.
+- Either way, orphaned pages and dead links **inside** the bundle are `/gvt-dev:maintain-wiki lint`'s job: it resolves OKF bundle-absolute link targets, honours subdirectory indexes, and skips the reserved `index.md`/`log.md` pages — none of which the audit's scanners attempt.
+- Both declines require `wiki.wikiDir` to be declared in `.gvt-agent.json`; a repo that declares no `wikiDir` takes the ordinary, unaffected path.
+- Both findings — `orphan-check-skipped` and `link-check-skipped` — are `info` severity and never move the audit's exit code, same as the rest of the hygiene scanners.
+
 A third example is the `wiki` block, configuring the LLM-wiki compounding-memory practice (`/gvt-dev:maintain-wiki` and its read-only `wiki-librarian` agent):
 
 - `wikiDir` (default `wiki`) — the directory holding the wiki's pages, index, and log. `wikiDir` **is** the OKF v0.2 bundle root — no separate `bundleRoot` key is introduced, since a second name for one thing is guaranteed drift. `rawDir` is outside the bundle.
@@ -127,7 +135,7 @@ A third example is the `wiki` block, configuring the LLM-wiki compounding-memory
 2. For each declared expectation (file, config key, or shell tool), checks whether the current repo satisfies it.
 3. Reports missing/mismatched expectations with the reason the skill needs them.
 
-Run with no arguments to validate. Exit code is non-zero if any required expectation is unmet.
+Run with no arguments to validate. Exit code is `0` if satisfied, `1` if any required expectation is unmet, and `2` if the audit itself hits an unexpected error — a broken tool, not a failed check. `--fix` has its own exit semantics: `0` once a dry-run preview completes, `1` if `--apply` refuses a dirty working tree or an applied action fails.
 
 **Fix mode** (`--fix`):
 1. Detects the repo's state — greenfield (no conventions yet), legacy (still on the old template-rendered system), or migrated.
