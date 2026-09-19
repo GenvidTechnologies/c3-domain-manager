@@ -28,6 +28,7 @@ import { generateDomainIndex, computeDomainData } from "../domain/domainGenerato
 import { resolveLocations, buildRegistry } from "../adapters/locations.js";
 import { ProjectContext } from "../adapters/projectContext.js";
 import { ProjectRegistry } from "../adapters/projectRegistry.js";
+import { unclassifiedGateTripped, formatUnclassifiedGateFailure } from "../adapters/unclassifiedGate.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { ShapeOutput } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 
@@ -448,22 +449,57 @@ registerProjectTool(
   {
     title: "Regenerate Domain Index",
     description:
-      "Run the domain index generator and update extracted/domain-index/. Clears the domainDirty flag. Use after external edits to domain-config.json or source files, or when domainDirty is true.",
+      "Run the domain index generator and update extracted/domain-index/. Clears the domainDirty flag. Use after external edits to domain-config.json or source files, or when domainDirty is true. Optionally pass maxUnclassified to have the call report a failure when more than that many files are unclassified; the index is regenerated and domainDirty cleared either way.",
     annotations: REGENERATE,
+    inputSchema: {
+      maxUnclassified: z.number().int().min(0).optional()
+        .describe("Classification-coverage gate: return an error result when more than this many files are unclassified. Omit for no gate at all (the historical behaviour: the count is reported and the call succeeds). Use 0 to require full coverage. The index is regenerated either way — the gate is applied afterwards, so the offending paths are in this call's output and in the generated domain-index/index.md."),
+    },
   },
   "write",
-  async (ctx) => {
+  async (ctx, { maxUnclassified }) => {
     const lines: string[] = [];
     const log: Logger = (...args) => lines.push(args.map(String).join(" "));
     try {
+      // `generateDomainIndex` returns its ComputeDomainDataResult, but this
+      // stays an assignment *statement* so the arrow's inferred return type
+      // remains Promise<void> and `suppress`'s parameter type is unaffected.
+      let unclassified!: string[];
       await ctx.watcher.suppress(async () => {
-        await generateDomainIndex(ctx.root, ctx.extractedDir, ctx.configDir, ctx.configFileName, log);
+        ({ unclassified } = await generateDomainIndex(ctx.root, ctx.extractedDir, ctx.configDir, ctx.configFileName, log));
       });
       // Force a fresh recompute (never reuse a cached value here — that is
       // exactly what a regenerate is for) and record it, clearing domainDirty.
       const config = await ctx.loadDomainConfig();
       if (isMcpError(config)) return config;
       ctx.markRegenerated(computeDomainData(ctx.root, config));
+      // Gated *after* markRegenerated, deliberately: the index genuinely was
+      // regenerated, so domainDirty must clear even on a trip — otherwise a
+      // project permanently over threshold would carry the stale-index
+      // warning forever.
+      //
+      // This bends the repo's convention that findings are content and
+      // `isError` is reserved for genuine failures (list-uncategorized,
+      // list-stale-overrides, validate-editor and addon-inventory all return
+      // their findings as plain text). The bend is scoped to this tool and is
+      // not a precedent for those four: `regenerate` is a REGENERATE-annotated
+      // *action*, not a findings tool, and a caller that passes
+      // `maxUnclassified` has explicitly asked for "treat exceeding n as a
+      // failure" — reporting success would discard that request. Omitting the
+      // parameter leaves the response byte-identical to what it has always
+      // been.
+      //
+      // The `!== undefined` test duplicates one `unclassifiedGateTripped`
+      // already makes; it is here so the compiler can narrow `maxUnclassified`
+      // to `number` for `formatUnclassifiedGateFailure`, not to change which
+      // calls trip.
+      if (maxUnclassified !== undefined && unclassifiedGateTripped(unclassified.length, maxUnclassified)) {
+        const failure = formatUnclassifiedGateFailure(unclassified.length, maxUnclassified);
+        return {
+          content: [{ type: "text", text: [...lines, failure].join("\n") }],
+          isError: true,
+        };
+      }
       return {
         content: [{ type: "text", text: lines.join("\n") }],
       };
