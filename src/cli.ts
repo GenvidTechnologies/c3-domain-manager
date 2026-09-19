@@ -160,7 +160,7 @@ yargs(hideBin(process.argv))
       // to `number` for `formatUnclassifiedGateFailure`, not to change which
       // runs trip.
       if (maxUnclassified !== undefined && unclassifiedGateTripped(unclassified.length, maxUnclassified)) {
-        console.error(formatUnclassifiedGateFailure(unclassified.length, maxUnclassified));
+        console.error(formatUnclassifiedGateFailure(unclassified.length, maxUnclassified, "--max-unclassified"));
         process.exit(UNCLASSIFIED_GATE_EXIT_CODE);
       }
     },

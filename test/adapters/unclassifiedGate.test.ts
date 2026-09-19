@@ -87,7 +87,7 @@ describe("unclassifiedGate", () => {
   });
 
   describe("formatUnclassifiedGateFailure", () => {
-    const msg = formatUnclassifiedGateFailure(1759, 0);
+    const msg = formatUnclassifiedGateFailure(1759, 0, "--max-unclassified");
 
     it("starts with the [c3-domain-manager] prefix the CLI's other warnings use", () => {
       assert.isTrue(msg.startsWith("[c3-domain-manager] "), `message was: ${msg}`);
@@ -113,6 +113,30 @@ describe("unclassifiedGate", () => {
     it("says where the offending paths can be found, without reprinting them", () => {
       assert.include(msg, "Unclassified:");
       assert.include(msg, "## Unclassified Files");
+    });
+
+    it("qualifies the index pointer, which --extracted none has already deleted", () => {
+      assert.include(msg, "when an extracted directory is kept");
+    });
+
+    it("names the CLI flag when the CLI calls it", () => {
+      assert.include(msg, "--max-unclassified allows 0");
+    });
+
+    // The injected name is the whole point of the third parameter: an MCP
+    // client passed `maxUnclassified` and cannot use a CLI flag at all, so
+    // naming one would invite an agent to reach for something unusable.
+    // Asserting the *absence* of the flag is what makes this non-vacuous —
+    // without it the parameter could be ignored and every other case here
+    // would still pass.
+    it("names the tool's input field, and no CLI flag, when the MCP server calls it", () => {
+      const mcpMsg = formatUnclassifiedGateFailure(1759, 0, "maxUnclassified");
+      assert.include(mcpMsg, "maxUnclassified allows 0");
+      assert.notInclude(mcpMsg, "--max-unclassified");
+      // The graded literal (acceptance rows R4 and R12) must survive in both
+      // transports, not just the CLI's.
+      assert.include(mcpMsg, "Classification gate failed:");
+      assert.notInclude(mcpMsg, "\n");
     });
   });
 });

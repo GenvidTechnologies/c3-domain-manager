@@ -461,13 +461,9 @@ registerProjectTool(
     const lines: string[] = [];
     const log: Logger = (...args) => lines.push(args.map(String).join(" "));
     try {
-      // `generateDomainIndex` returns its ComputeDomainDataResult, but this
-      // stays an assignment *statement* so the arrow's inferred return type
-      // remains Promise<void> and `suppress`'s parameter type is unaffected.
-      let unclassified!: string[];
-      await ctx.watcher.suppress(async () => {
-        ({ unclassified } = await generateDomainIndex(ctx.root, ctx.extractedDir, ctx.configDir, ctx.configFileName, log));
-      });
+      const { unclassified } = await ctx.watcher.suppress(() =>
+        generateDomainIndex(ctx.root, ctx.extractedDir, ctx.configDir, ctx.configFileName, log),
+      );
       // Force a fresh recompute (never reuse a cached value here — that is
       // exactly what a regenerate is for) and record it, clearing domainDirty.
       const config = await ctx.loadDomainConfig();
@@ -494,7 +490,7 @@ registerProjectTool(
       // to `number` for `formatUnclassifiedGateFailure`, not to change which
       // calls trip.
       if (maxUnclassified !== undefined && unclassifiedGateTripped(unclassified.length, maxUnclassified)) {
-        const failure = formatUnclassifiedGateFailure(unclassified.length, maxUnclassified);
+        const failure = formatUnclassifiedGateFailure(unclassified.length, maxUnclassified, "maxUnclassified");
         return {
           content: [{ type: "text", text: [...lines, failure].join("\n") }],
           isError: true,

@@ -158,6 +158,13 @@ count, the threshold, and *where the paths already are*. At the measured 1759
 baseline an exhaustive message would add 1759 lines to stderr and bury the
 verdict it exists to deliver.
 
+The option's name is injected by the caller rather than hardcoded, so the CLI
+line names `--max-unclassified` and the MCP line names `maxUnclassified`. This
+is not cosmetic: the `isError` bend below is licensed by the caller having
+asked for failure semantics, and a response naming a CLI flag an MCP client
+cannot pass would not be reflecting that request back. Raised in review on the
+first version of this branch, which hardcoded the flag in both transports.
+
 ### On the MCP side, `regenerate` gains an optional `maxUnclassified` — and a scoped `isError` bend
 
 `regenerate` accepts `maxUnclassified: z.number().int().min(0).optional()`.

@@ -39,7 +39,6 @@ export function unclassifiedGateTripped(count: number, max: number | undefined):
 
 function render(raw: unknown): string {
   if (typeof raw === "string") return JSON.stringify(raw);
-  if (typeof raw === "symbol") return raw.toString();
   return String(raw);
 }
 
@@ -52,12 +51,13 @@ function render(raw: unknown): string {
  * `--max-unclassified abc` reaches the handler **already coerced to the
  * number `NaN`** (`typeof` `"number"`), not as the string `"abc"`. A
  * signature typed `string` would therefore never see the failing case at
- * all. `unknown` also covers the MCP side, where the value arrives as
- * whatever the client put in the tool call's JSON.
+ * all.
  *
  * Rejects `NaN`, infinities, negatives, non-integers and any non-number;
  * accepts `0`, which is the meaningful "allow nothing" setting. The error
- * text names `--max-unclassified` so the CLI can print it verbatim.
+ * text names `--max-unclassified` unconditionally because the CLI is this
+ * function's only caller — the `regenerate` tool's threshold is validated by
+ * its zod input schema instead, so no MCP response can ever carry this text.
  *
  * Note `undefined` is rejected, not treated as "gate off". Distinguishing an
  * absent flag from a present one is the caller's job, and it is genuinely
@@ -85,13 +85,21 @@ export function parseMaxUnclassified(raw: unknown): { ok: number } | { error: st
  * them all under its `## Unclassified Files` heading. Reprinting is not a
  * cosmetic concern — a real corpus project measured 1759 unclassified files,
  * so an exhaustive message would add 1759 lines to stderr and bury the
- * verdict it exists to deliver.
+ * verdict it exists to deliver. The index pointer is qualified rather than
+ * stated flatly because `--extracted none` deletes the extracted directory
+ * before this message prints, leaving no `index.md` to consult.
+ *
+ * `optionName` is injected rather than hardcoded because both adapters call
+ * this and they name the threshold differently: the CLI flag is
+ * `--max-unclassified`, the `regenerate` tool's input field is
+ * `maxUnclassified`. Hardcoding the flag told an MCP client — typically an
+ * LLM agent — to reach for something it has no way to pass.
  */
-export function formatUnclassifiedGateFailure(count: number, max: number): string {
+export function formatUnclassifiedGateFailure(count: number, max: number, optionName: string): string {
   return (
     `[c3-domain-manager] Classification gate failed: ${count} unclassified file(s), ` +
-    `--max-unclassified allows ${max}. The offending paths are listed as "Unclassified:" ` +
-    `lines in this run's output, and under "## Unclassified Files" in the generated ` +
-    `domain-index/index.md.`
+    `${optionName} allows ${max}. The offending paths are listed as "Unclassified:" ` +
+    `lines in this run's output, and — when an extracted directory is kept — under ` +
+    `"## Unclassified Files" in the generated domain-index/index.md.`
   );
 }
