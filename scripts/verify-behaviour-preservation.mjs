@@ -166,8 +166,36 @@ function stripRoot(text, root) {
   return text.split(root).join("<ROOT>").split(forward).join("<ROOT>");
 }
 
+/**
+ * Fail fast when `--mutant` is passed but no mutation is present.
+ *
+ * This checks that you injected; it deliberately does NOT inject for you —
+ * see the A3-M note in this file's header for why the injection stays manual.
+ * Without this guard the run spends a `git worktree add` plus a full `npm ci`
+ * before reporting `A3-M FAILED`, which is the *correct* answer to "did an
+ * unmutated tree differ?" but reads exactly like a broken comparison or a
+ * real regression. Measured in issue #81, where that red was misdiagnosed as
+ * a finding about the code.
+ */
+function assertMutationInjected() {
+  const target = path.join(repoRoot, "src", "adapters", "locations.ts");
+  if (fs.readFileSync(target, "utf8").includes("extracted-MUTANT")) return;
+  console.error(
+    "[verify] --mutant was passed, but src/adapters/locations.ts contains no mutation.\n" +
+      "[verify] This flag only flips the assertion to expect a difference — it does not inject one.\n" +
+      "[verify] Inject it first, then re-run:\n" +
+      '[verify]   in resolveLocations, change the default branch\'s "extracted" to "extracted-MUTANT"\n' +
+      "[verify]   grep -n 'extracted-MUTANT' src/adapters/locations.ts   # confirm it landed\n" +
+      "[verify]   npm run verify:behaviour-preservation -- --mutant      # expect a difference\n" +
+      "[verify]   git checkout -- src/adapters/locations.ts              # then revert\n" +
+      "[verify] Refusing to run: an unmutated --mutant run reports a failure that looks like a code defect.",
+  );
+  process.exit(1);
+}
+
 async function main() {
   const mutant = process.argv.includes("--mutant");
+  if (mutant) assertMutationInjected();
 
   console.log(`[verify] adding a detached worktree at ${BASE_COMMIT}...`);
   const worktreeDir = fs.mkdtempSync(path.join(os.tmpdir(), "c3dm-a3-worktree-"));

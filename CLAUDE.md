@@ -51,10 +51,24 @@ server rewrite (issue #77, ADR 0028) actually changed anything an existing singl
 client would observe. It stands up a detached worktree at a fixed pre-rewrite commit
 (`8dc593e`), runs a real `npm ci` there, and drives the 11 tools that emit no `txId` against
 both that server and the current working tree over stdio, asserting the output is
-byte-identical after normalizing only the per-run temp root. `--mutant` injects a one-line
-defect into `resolveLocations`'s default `extractedDir` branch before the working-tree run,
-as the control proving the comparison can actually detect a real behavioural change — an
-empty diff is unfalsifiable on its own. It is deliberately **outside `npm test`**, for the
+byte-identical after normalizing only the per-run temp root. **`--mutant` does *not* inject
+anything — it only flips the assertion to expect a difference, and the operator must inject
+the defect by hand first.** This sentence said the opposite for some time, and that error cost
+issue #81 a wrong turn: run as documented, the control reported `A3-M FAILED: the mutation
+produced no observable difference`, which was the *correct* answer to a question nobody had
+set up, and reads exactly like a broken comparison or a real regression. The script says so in
+its own header (`scripts/verify-behaviour-preservation.mjs:34-37`) and says why — auto-applying
+*"would defeat the point of grep-confirming the injection landed before reading the run."* Note
+how the error propagated: the header *opens* "A3-M injects a one-line mutation", where the
+subject is the acceptance procedure rather than the flag, and the qualifier sits four lines
+below the range the criterion cited. The control is therefore **four steps**, not one: edit
+`resolveLocations`'s default `extractedDir` branch (`"extracted"` → `"extracted-MUTANT"`),
+`grep` to confirm the injection landed, run `npm run verify:behaviour-preservation -- --mutant`
+and require a **difference** in `regenerate`, then revert and `grep -rn 'extracted-MUTANT' src/`
+to confirm clean. The control is what makes the plain arm mean anything — an empty diff is
+unfalsifiable on its own. A guard now fails the run fast when `--mutant` is passed with no
+mutation present, so this particular mistake costs a second rather than an `npm ci`; the guard
+checks that you injected, it does not inject for you. It is deliberately **outside `npm test`**, for the
 same reason `corpus:scan` is: it needs the network and a worktree, and folding a check whose
 subject is a fixed historical commit into every run would trade hermeticity for that one
 comparison. Re-run it on demand rather than trusting a stale record of its result.
