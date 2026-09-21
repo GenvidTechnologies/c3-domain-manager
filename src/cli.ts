@@ -11,6 +11,12 @@ import { validateEditorStrictness, formatEditorStrictnessReport } from "./domain
 import { computeAddonInventory, formatAddonInventoryReport } from "./domain/addonInventory.js";
 import { resolveLocations, resolveProjectRoot, resolveProjectRoots, buildRegistry } from "./adapters/locations.js";
 import type { ProjectSpec } from "./adapters/locations.js";
+import {
+  UNCLASSIFIED_GATE_EXIT_CODE,
+  formatUnclassifiedGateFailure,
+  parseMaxUnclassified,
+  unclassifiedGateTripped,
+} from "./adapters/unclassifiedGate.js";
 import { buildServerProjectSpecs } from "./cliProjectFlags.js";
 import { isMcpError } from "@genvidtech/mcp-utils";
 
@@ -102,16 +108,60 @@ yargs(hideBin(process.argv))
   .command(
     "generate",
     "Generate domain index",
-    () => {},
+    (y) =>
+      y.option("max-unclassified", {
+        type: "number",
+        // Without this, a bare `--max-unclassified` (no value) reaches the
+        // handler as `undefined` — indistinguishable from the flag being
+        // absent, so the gate would silently turn itself off and the run
+        // would report success. yargs rejects the bare form instead, with
+        // "Not enough arguments following: max-unclassified".
+        requiresArg: true,
+        describe:
+          "Fail the run with exit code 2 when more than <n> files are unclassified. Omit the flag and there is no " +
+          "gate at all: the run reports its unclassified count and still exits 0, which is the historical behaviour. " +
+          "Use 0 to require full classification coverage, or the project's current count (see the list-uncategorized " +
+          "subcommand) to ratchet the allowance down over time. The index is generated first and the gate applied " +
+          "afterwards, so the offending paths are reported on stdout and listed in the generated domain-index/index.md.",
+      }),
     async (argv) => {
+      // Validated before any work starts: a bad threshold is a bad
+      // invocation, so it exits 1 like the file's other usage errors rather
+      // than 2, which is reserved for a gate that actually tripped.
+      const rawMax = argv["max-unclassified"];
+      let maxUnclassified: number | undefined;
+      if (rawMax !== undefined) {
+        const parsed = parseMaxUnclassified(rawMax);
+        if ("error" in parsed) {
+          console.error(parsed.error);
+          process.exit(1);
+        }
+        maxUnclassified = parsed.ok;
+      }
       const projectRoot = resolveRootOrExit(argv["project-dir"] as string | undefined);
       const loc = resolveLocations({ config: argv.config as string | undefined, extracted: argv.extracted as string | undefined }, projectRoot);
+      let unclassified: string[];
       try {
-        await generateDomainIndex(loc.projectRoot, loc.extractedDir, loc.configDir, loc.configFileName, console.log);
+        ({ unclassified } = await generateDomainIndex(loc.projectRoot, loc.extractedDir, loc.configDir, loc.configFileName, console.log));
       } finally {
         if (loc.extractedEphemeral) {
           rmSync(loc.extractedDir, { recursive: true, force: true });
         }
+      }
+      // Deliberately outside the try/finally above: `process.exit` does not
+      // run pending `finally` blocks, so a gate failure raised inside the try
+      // would skip the ephemeral-temp-dir cleanup and leak a directory on
+      // every tripped run. The index has already been written by this point,
+      // and that is also deliberate — the unclassified paths it lists are the
+      // instructions for fixing the failure.
+      //
+      // The `!== undefined` test duplicates one `unclassifiedGateTripped`
+      // already makes; it is here so the compiler can narrow `maxUnclassified`
+      // to `number` for `formatUnclassifiedGateFailure`, not to change which
+      // runs trip.
+      if (maxUnclassified !== undefined && unclassifiedGateTripped(unclassified.length, maxUnclassified)) {
+        console.error(formatUnclassifiedGateFailure(unclassified.length, maxUnclassified, "--max-unclassified"));
+        process.exit(UNCLASSIFIED_GATE_EXIT_CODE);
       }
     },
   )

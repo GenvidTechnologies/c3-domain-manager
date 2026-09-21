@@ -513,13 +513,19 @@ export function computeDomainData(
   return { domains, unclassified };
 }
 
+/**
+ * I/O wrapper over `computeDomainData`: loads and validates the config, computes the
+ * domain data, then wipes and rewrites `<outDir>/domain-index/`.
+ * Returns the same `{ domains, unclassified }` result the pure core produced, so a
+ * caller can act on the analysis without recomputing it.
+ */
 export async function generateDomainIndex(
   rootDir: string,
   outDir: string,
   projectRoot: string,
   fileName: string,
   log: Logger = console.log,
-): Promise<void> {
+): Promise<ComputeDomainDataResult> {
   const config = await loadConfig(projectRoot, fileName);
   const domainIndexDir = path.join(outDir, "domain-index");
 
@@ -552,4 +558,6 @@ export async function generateDomainIndex(
   } else {
     log("  All files classified.");
   }
+
+  return { domains, unclassified };
 }

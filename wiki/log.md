@@ -14,6 +14,32 @@ the append-only guarantee holds exactly as before. If a past entry itself needs
 correcting, add a new entry that says so; never edit or remove the old one in
 place. See `wiki/schema.md` for the full maintenance schema.
 
+## 2026-09-19
+
+- Updated **acceptance-criteria-failure-modes.md** — added **Shape 4**, a row
+  whose *measurement procedure* cannot pass, distinct from the three shapes the
+  page already carried because those are defects in what a row asserts rather
+  than in how it says to measure. Measured on
+  [issue #81](https://github.com/GenvidTechnologies/c3-domain-manager/issues/81):
+  a pledged control arm invoked a flag that only flips an assertion, leaving the
+  defect it asserts about to be injected by the operator, so running the row
+  faithfully reported "no difference" — the correct answer to a question nobody
+  had set up, and one indistinguishable from a broken comparison or a real
+  regression. Separated from Shape 1 because it grades **red** rather than green,
+  so no untouched-checkout screen fires on it, and its failure arrives wearing
+  the costume of a code finding. The reusable part is the propagation: the row's
+  citation of the script header was *accurate*, and the sentence withdrawing it
+  sat four lines below the cited range — a line range can be correctly quoted and
+  still stop short of its own qualifier. Sources: issue #81's two inline
+  correction records and
+  [ADR 0030](decisions/0030-classification-coverage-gate.md).
+- Note for a later reader: the same branch corrected the project summary whose
+  compression of that header seeded the defective row, and added a fail-fast
+  guard so an uninjected control run costs a second rather than a full dependency
+  install. The guard checks that the operator injected; it deliberately does not
+  inject, since auto-applying would dissolve the grep-confirm step the script's
+  design rests on.
+
 ## 2026-09-02
 
 - Ingested **acceptance-criteria-failure-modes.md** — three shapes of defective

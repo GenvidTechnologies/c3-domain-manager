@@ -8,6 +8,31 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+### Added
+- An opt-in classification-coverage gate (#81, ADR 0030). `generate` accepts
+  `--max-unclassified <n>` and exits **2** when more than `n` files are
+  unclassified; the MCP `regenerate` tool accepts the equivalent optional
+  `maxUnclassified` and returns an error result. Omit either and behaviour is
+  unchanged — the count is reported and the run succeeds, as it always has.
+  Exit code 2 is new and means "the analysis ran and found a policy breach";
+  exit 1 keeps its existing meaning of "the command could not run", including
+  an invalid threshold. The index is generated *before* the gate is applied,
+  so a failing run still leaves the unclassified paths on stdout and in the
+  generated `domain-index/index.md`. `regenerate` clears `domainDirty` even
+  when the gate trips, since the index genuinely was regenerated. Enabled by
+  the widened `generateDomainIndex` return recorded under **Changed** below —
+  without it the CLI would have had to re-run `computeDomainData` to learn the
+  count it gates on.
+
+### Changed
+- `generateDomainIndex` now resolves to `ComputeDomainDataResult`
+  (`{ domains, unclassified }`) instead of `void` (#81, ADR 0030) — a
+  published API change. It returns the same result the pure `computeDomainData`
+  core already produced, so a caller can act on the analysis without walking
+  the project a second time; this is what makes the gate above expressible
+  without a second full computation. Additive for existing callers, which can
+  continue to ignore the resolved value.
+
 ## [0.10.1] - 2026-09-15
 
 ### Changed

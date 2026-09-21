@@ -1,11 +1,11 @@
 ---
 type: practice-note
 title: How a pre-committed acceptance criterion is wrong before anyone runs it
-description: Three shapes of defect measured across 62 pre-committed criteria on one issue — a row that grades green on an untouched checkout, a row whose corpus is narrower than the property it protects, and a row falsified by a later task in its own plan — plus the coverage gap none of them can expose, and which reader catches which.
+description: Four shapes of defect measured across two issues' pre-committed criteria — a row that grades green on an untouched checkout, a row whose corpus is narrower than the property it protects, a row falsified by a later task in its own plan, and a row whose measurement procedure cannot pass at all, whose correct red then reads as a finding about the code — plus the coverage gap none of them can expose, and which reader catches which.
 tags: [acceptance-criteria, verification, practice, plan-task]
 status: stable
-stale_after: 2027-09-02
-generated: { by: process:maintain-wiki, at: 2026-09-02T00:00:00Z }
+stale_after: 2027-09-19
+generated: { by: process:maintain-wiki, at: 2026-09-19T00:00:00Z }
 sources:
   - id: issue77
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/77
@@ -18,6 +18,13 @@ sources:
     resource: decisions/0026-fs-watch-platform-confound-and-upstream-routing.md
     title: "ADR 0026: fs.watch platform confound and upstream routing"
     last_modified: 2026-08-16
+  - id: issue81
+    resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/81
+    title: "Issue #81 — generate: add a flag to fail on unclassified files; carries the Shape 4 correction record"
+  - id: adr0030
+    resource: decisions/0030-classification-coverage-gate.md
+    title: "ADR 0030: An opt-in classification-coverage gate on generate"
+    last_modified: 2026-09-19
 ---
 
 # How a pre-committed acceptance criterion is wrong before anyone runs it
@@ -52,6 +59,18 @@ The instance: a row requiring two invocations to produce byte-identical output. 
 
 Both easy exits are wrong and worth naming, because each looks like diligence: relaxing the row to "roughly similar" discards the pre-commitment the practice exists for, and dropping the feature to keep the row satisfiable sacrifices the work to its own test. The repair excluded the one field that legitimately varies and **recovered it with a separate assertion**, ending stronger than the whole-text comparison it replaced.[^issue77]
 
+## Shape 4 — the row whose procedure cannot pass, and whose correct red reads as a code finding
+
+The three shapes above are all defects in *what* a row asserts. This one is a defect in *how* it says to measure — and it is the only shape where running the row's own command, faithfully, still cannot produce a pass.
+
+The instance: a row pledged that `npm run verify:behaviour-preservation -- --mutant` must report a difference, as the control proving an empty diff from the plain arm is falsifiable.[^issue81] The flag does not inject the defect it asserts about; it only flips the assertion to expect a difference, leaving the injection to the operator. Run as pledged against an unmutated tree, the control reported that no difference was observed — **the correct answer to the question actually asked**, and one that reads exactly like a broken comparison or a real regression.[^adr0030]
+
+Three things make it worth separating from Shape 1. The row graded **red**, not green, so no "does this pass on an untouched checkout?" screen fires. It was never true, so no staleness check reaches it. And its failure arrives wearing the costume of a finding about the code, which is the expensive direction: the natural responses are to debug a healthy script or to re-run and shrug, and both leave the control unestablished while feeling like diligence.
+
+**The propagation is the reusable part, because the citation was accurate.** The row cited a line range in the script's own header, and that range says the mutation is injected. The sentence withdrawing it — *"This script does not apply the mutation itself"* — sits four lines below the cited range, and the header's opening clause attributes injection to the acceptance *procedure*, not the flag. A project summary had already compressed that into "`--mutant` injects", and the row inherited the compression.[^adr0030] So: **a cited line range can be correctly quoted and still stop short of its own qualifier**, and a summary of a source is not the source even when it cites one.
+
+The repair was to replace the one-step invocation with the four-step control the script actually requires — inject, grep-confirm the injection landed, run, then revert and grep-confirm clean — which is *more* procedure reaching the same protected property, not less.[^issue81] A guard was then added so the mistake costs a second rather than a full dependency install, and it deliberately checks that the operator injected rather than injecting for them: auto-applying would dissolve the grep-confirm step the design rests on.[^adr0030]
+
 ## The fourth failure: rules that are real, built, and ungradeable
 
 Not a defective row — an **absent** one. A code review of the finished branch found two defects turning on behaviour that no row covered: a guard that must apply wherever more than one project can be registered, and a uniqueness rule on projects' output directories. Both were designed, both implemented, neither gradeable.[^issue77]
@@ -84,3 +103,5 @@ The same asymmetry ADR 0026 records for observation-gated tests applies here: a 
 [^issue77]: Issue #77 — the pledged checklist, its eight inline correction records, each naming the failure mode and the evidence that established it, and the three rows added after code review.
 [^adr0028]: ADR 0028 — the decision record produced by the same work; its declines section records the reasoning the criteria were written against.
 [^adr0026]: ADR 0026 — establishes that an assertion which fires only when a defect appears is indistinguishable from one that never fires because its subject is dead.
+[^issue81]: Issue #81 — the pledged checklist carrying two inline correction records, one written before execution and one during it; the second is the Shape 4 instance, recorded with its original wording, the defect, and the evidence that settled it.
+[^adr0030]: ADR 0030 — the decision record produced by the same work; the branch that produced it also corrected the project summary whose compression of the script header seeded the defective row, and added the fail-fast guard.
