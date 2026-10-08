@@ -8,6 +8,23 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-08
+
+### Changed
+- The `bin` entry in `package.json` is now written `dist/cli.js`, without the
+  leading `./`. npm forbids that prefix on a bin path and was already rewriting
+  it on publish, so the shipped `bin` is unchanged. This only aligns the source
+  with the artifact and removes the "npm auto-corrected some errors" warning
+  every publish printed. (`main`, `types` and `exports` keep their `./`
+  prefixes, which are correct there.)
+
+### Documentation
+- New `wiki/reference/key-dependencies.md`: the per-release adoption history
+  of `@genvidtech/c3source` and `@genvidtech/mcp-utils`, moved out of
+  `CLAUDE.md`. It now also records c3source 2.1.0's new exports as evaluated
+  and deferred (#83). Because the MCP server exposes `wiki/` recursively, this
+  page is a new docs resource.
+
 ## [0.11.0] - 2026-09-21
 
 ### Added
@@ -328,7 +345,8 @@ There is also a stray unprefixed `0.1.0` tag (dated 2026-04-03, predating the
 `v`-prefixed `v0.1.0` tag above) left over from before the tag naming
 convention was adopted; it does not correspond to a separate release.
 
-[Unreleased]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.9.0...v0.10.0
