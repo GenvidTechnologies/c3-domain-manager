@@ -4,7 +4,8 @@
  * package.json is no longer the floor stated in CLAUDE.md.
  *
  * CLAUDE.md documents each key dependency's floor in prose ("(floor `^1.9.0`)")
- * and records *why* that floor is load-bearing in its "When bumping …" chain.
+ * and records *why* that floor is load-bearing in the "When bumping …" chain
+ * of wiki/reference/key-dependencies.md.
  * Both are documentation, so they drift silently: a bump that touches only
  * package.json leaves CLAUDE.md asserting a version the code no longer needs.
  * That happened in issue #33 and was caught only at code review.
@@ -61,7 +62,8 @@ function main() {
   const msg =
     `CLAUDE.md does not mention ${list}. Bumping a key dependency is a ` +
     `two-place change: update the stated floor in CLAUDE.md's "Key dependencies" ` +
-    `section AND add the adoption to its "When bumping …" chain, in this same ` +
+    `section AND add the adoption to the "When bumping …" chain in ` +
+    `wiki/reference/key-dependencies.md, in this same ` +
     `commit — so the reason the new floor is load-bearing is recorded, not just ` +
     `the number.`;
 

@@ -38,6 +38,7 @@ and maintenance rules.
 
 ## Dependency Management
 
+- `reference/key-dependencies.md` — per-release adoption history of `@genvidtech/c3source` and `@genvidtech/mcp-utils`: what each floor is load-bearing for, and what was adopted, deferred, or declined and why
 - [Route a shared-primitive defect upstream, not around it](upstream-dependency-routing.md) — When a defect or a missing primitive sits inside a first-party dependency's shared code, route the fix to that dependency's own repo rather than patching around it locally — but verify the fix actually closes the symptom, not just the mechanism it targeted.
 
 ## Documentation Practice
