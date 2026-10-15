@@ -30,6 +30,7 @@ and maintenance rules.
 
 ## Process
 
+- `process/documentation-conventions.md` — rules for writing `wiki/` pages, ADRs and `CLAUDE.md`: the two documentation tiers, paraphrase-as-drift (four shapes), citation forms (`[[slug]]` between ADRs, symbols not line ranges in code), path-move sweeps, and grep-as-evidence pitfalls; moved out of `CLAUDE.md` to fit the instruction-file load limit
 - `process/issue-triage.md` — issue-triage conventions (flat GitHub label set): categories, required fields, duplicate/dependency policy, and the `gh` mutation recipes
 
 ## Testing & Platform
