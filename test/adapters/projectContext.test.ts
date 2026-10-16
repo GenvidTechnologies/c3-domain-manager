@@ -280,6 +280,26 @@ describe("ProjectContext", () => {
       const reloaded = await ctx.loadDomainConfig();
       assert.equal((reloaded as DomainConfig).domains.Domain0.description, "after");
     });
+
+    it("suppresses an unchanged-content event (L3) without bumping txId or setting domainDirty", async function () {
+      this.timeout(5000);
+      const body = JSON.stringify(configBody("same"));
+      createFile(tmpDir, "domain-config.json", body);
+      ctx.start(); // before any loadDomainConfig, so the baseline is primed from disk
+      const txBefore = ctx.watcher.txId;
+
+      const debugLogs = () => logs.filter((l) => l.level === "debug").map((l) => l.message);
+      assert.isTrue(
+        debugLogs().some((m) => /^\[proj-a\] .*OptimisticWatcher baseline: 1 files, 0 directories/.test(m)),
+        `no baseline debug log; got: ${JSON.stringify(debugLogs())}`,
+      );
+
+      fs.writeFileSync(ctx.configPath, body, "utf-8"); // identical bytes
+      await waitUntil(() => debugLogs().some((m) => m.includes("suppressed (L3, state unchanged)")));
+
+      assert.equal(ctx.watcher.txId, txBefore);
+      assert.isFalse(ctx.domainDirty);
+    });
   });
 
   describe("shared ExpectedChanges across distinct configPaths", () => {
