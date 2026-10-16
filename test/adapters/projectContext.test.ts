@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "mocha";
 import { assert } from "chai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ProjectContext } from "../../src/adapters/projectContext.js";
+import { ProjectContext, renderLogArgs } from "../../src/adapters/projectContext.js";
 import type { EmitFn, LogLevel } from "../../src/adapters/projectContext.js";
 import { resolveLocations, NO_EXTRACTED } from "../../src/adapters/locations.js";
 import { makeTempDir, removeTempDir, createFile } from "../syntheticProject.js";
@@ -299,6 +299,44 @@ describe("ProjectContext", () => {
 
       assert.equal(ctx.watcher.txId, txBefore);
       assert.isFalse(ctx.domainDirty);
+
+      // ADR 0031: the per-event line names the file, not the project root.
+      const l3 = debugLogs().filter((m) => m.includes("suppressed (L3, state unchanged)"));
+      assert.equal(l3[0], "[proj-a] suppressed (L3, state unchanged): domain-config.json");
+      assert.notInclude(l3[0], tmpDir);
+    });
+
+    it("keeps the full config path on the once-per-start `started` line", () => {
+      createFile(tmpDir, "domain-config.json", JSON.stringify(configBody("same")));
+      ctx.start();
+      const started = logs.filter((l) => l.level === "debug" && l.message.includes("OptimisticWatcher started"));
+      assert.lengthOf(started, 1);
+      assert.include(started[0].message, ctx.configPath);
+    });
+  });
+
+  describe("renderLogArgs", () => {
+    it("renders a string and a one-string array without brackets, quotes or doubled backslashes", () => {
+      const bs = String.fromCharCode(92);
+      const p = ["C:", "a", "b"].join(bs);
+      assert.equal(renderLogArgs(["x:", [p]]), "x: " + p);
+      assert.equal(renderLogArgs(["x:", [p]]), String.raw`x: C:\a\b`);
+    });
+
+    it("returns a constant fallback for a cyclic null-prototype object instead of throwing", () => {
+      const o: Record<string, unknown> = Object.create(null);
+      o.self = o;
+      let out = "";
+      assert.doesNotThrow(() => {
+        out = renderLogArgs([o]);
+      });
+      assert.equal(out, "(unrenderable log arguments)");
+    });
+
+    it("renders a cyclic ordinary object via String() rather than losing the whole line", () => {
+      const o: Record<string, unknown> = {};
+      o.self = o;
+      assert.equal(renderLogArgs(["got:", o]), "got: [object Object]");
     });
   });
 
