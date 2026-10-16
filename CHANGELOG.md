@@ -8,6 +8,16 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+### Changed
+- Bump `@genvidtech/mcp-utils` floor to `^0.12.0` (#85) — load-bearing for the
+  watcher's single-file baseline: `start()` now records the watched
+  `domain-config.json` as a file, so a first event on unchanged content is
+  suppressed by Layer 3 instead of bumping `txId`. The 0.10.0 → 0.12.0 public
+  API change is additive only.
+- The MCP server now emits the `OptimisticWatcher`'s diagnostics as
+  debug-level, `[id]`-prefixed log notifications (started, baseline,
+  suppressed L1/L2/L3, external change, stopped), so clients receive them.
+
 ## [0.11.1] - 2026-10-08
 
 ### Changed
