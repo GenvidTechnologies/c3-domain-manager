@@ -446,7 +446,7 @@ describe("mcp server — multi-project integration (F1.5)", function () {
       });
       fs.writeFileSync(h.configPaths.beta, JSON.stringify(betaExternalConfig, null, "\t") + "\n", "utf-8");
 
-      await h.waitForNote((n) => /^\[beta\] /.test(String(n.data)));
+      await h.waitForNote((n) => n.level === "warning" && /^\[beta\] External change detected/.test(String(n.data)));
 
       // Positive control: the notification channel is alive at all — a dead
       // logging channel would make the absence check below pass vacuously.

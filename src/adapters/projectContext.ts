@@ -116,6 +116,24 @@ export class ProjectContext {
         w.unref();
         return { close: () => w.close() };
       },
+      // Surface the watcher's own diagnostics as debug-level, [id]-prefixed
+      // log notifications, so suppression decisions are observable per project.
+      logger: (...args: unknown[]) => {
+        this.#log(
+          "debug",
+          args
+            .map((a) => {
+              if (typeof a === "string") return a;
+              if (a instanceof Error) return a.message;
+              try {
+                return JSON.stringify(a) ?? String(a);
+              } catch {
+                return String(a);
+              }
+            })
+            .join(" "),
+        );
+      },
       onExternalChange: () => {
         this.#domainDirty = true;
         this.#domainConfigCache = null;
