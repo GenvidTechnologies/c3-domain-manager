@@ -59,7 +59,10 @@ flush could not replay `debug` versus `warning` faithfully.
 
 Pre-connect lines reach the client's server log (stderr), not the client as
 logging notifications. That is the same channel the banner already uses, and it
-is the only one that exists before a transport does.
+is the only one that exists before a transport does. They also bypass the
+client's log level: a client can call `logging/setLevel` only once connected,
+so every pre-connect line, `debug` included, reaches stderr, while
+post-connect lines are filtered by the SDK against the level the session set.
 
 ## Consequences
 
