@@ -8,7 +8,27 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-20
+
+### Fixed
+- MCP server log lines emitted before the transport connects are no longer
+  dropped (#86, ADR 0031). `emitLog` now writes them to stderr as
+  `[c3-domain-manager] <level>: <message>` while the server is not connected,
+  and sends only a logging notification once it is. The watcher's `started`
+  and `baseline` lines, which are emitted before connect, now appear in the
+  client's server log. They bypass the client's log level, since no session can
+  have set one before connect.
+- The watcher's `started` line no longer doubles Windows backslashes: arrays
+  in watcher log arguments render as joined text instead of JSON. An argument
+  that cannot be rendered now yields a constant placeholder instead of
+  throwing (#86).
+
 ### Changed
+- Per-event watcher log lines (suppressed L1/L2/L3, external change, and the
+  error lines) name the config file by basename, `domain-config.json`, instead
+  of its absolute path; the `[id]` prefix already identifies the project. The
+  `started` line keeps the full path. This changes the text of log
+  notifications clients already receive (#86).
 - Bump `@genvidtech/mcp-utils` floor to `^0.12.0` (#85) — load-bearing for the
   watcher's single-file baseline: `start()` now records the watched
   `domain-config.json` as a file, so a first event on unchanged content is
@@ -19,7 +39,13 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
   notifications. A self-write through `set-overrides`/`remove-overrides` now
   also produces a suppression note for each watcher event it triggers. The
   watcher's `started` and `baseline` lines are logged before the transport
-  connects, so clients do not receive them.
+  connects, so they reach stderr rather than the client's notifications (see
+  **Fixed** above).
+
+### Documentation
+- New ADR 0031 (`wiki/decisions/0031-pre-connect-log-stderr-fallback.md`), the
+  stderr-fallback decision. Because the MCP server exposes `wiki/`
+  recursively, it is a new docs resource.
 
 ## [0.11.1] - 2026-10-08
 
