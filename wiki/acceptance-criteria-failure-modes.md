@@ -1,11 +1,11 @@
 ---
 type: practice-note
 title: How a pre-committed acceptance criterion is wrong before anyone runs it
-description: Four shapes of defect measured across two issues' pre-committed criteria — a row that grades green on an untouched checkout, a row whose corpus is narrower than the property it protects, a row falsified by a later task in its own plan, and a row whose measurement procedure cannot pass at all, whose correct red then reads as a finding about the code — plus the coverage gap none of them can expose, and which reader catches which.
+description: Four shapes of defect measured across three issues' pre-committed criteria — a row that grades green on an untouched checkout, a row whose corpus is narrower than the property it protects, a row falsified by a later task in its own plan, and a row whose measurement procedure cannot pass at all, whose correct red then reads as a finding about the code — plus two neighbouring cases (an absence assertion that cannot fail against its own defect, and rows wrong when written), the coverage gap none of them can expose, and which reader catches which.
 tags: [acceptance-criteria, verification, practice, plan-task]
 status: stable
-stale_after: 2027-09-19
-generated: { by: process:maintain-wiki, at: 2026-09-19T00:00:00Z }
+stale_after: 2027-10-19
+generated: { by: process:maintain-wiki, at: 2026-10-19T00:00:00Z }
 sources:
   - id: issue77
     resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/77
@@ -25,6 +25,13 @@ sources:
     resource: decisions/0030-classification-coverage-gate.md
     title: "ADR 0030: An opt-in classification-coverage gate on generate"
     last_modified: 2026-09-19
+  - id: issue86
+    resource: https://github.com/GenvidTechnologies/c3-domain-manager/issues/86
+    title: "Issue #86 — pre-connect log fallback; carries the R2 control table and the R8 and R10 correction records"
+  - id: adr0031
+    resource: decisions/0031-pre-connect-log-stderr-fallback.md
+    title: "ADR 0031: Fall back to stderr for log lines emitted before the transport connects"
+    last_modified: 2026-10-16
 ---
 
 # How a pre-committed acceptance criterion is wrong before anyone runs it
@@ -42,6 +49,8 @@ The instance: a row asserting a documentation chain gained an entry, written as 
 The repair is not a higher threshold. It is a **narrower anchor**: matching the shape the row actually means (`The <version> floor is load-bearing`) rather than a phrase that also appears elsewhere, which restored a true baseline of 2 and a non-vacuous `>=3`.[^issue77]
 
 **The tell is cheap and specific: run every baseline against the pre-change tree, and treat a baseline that already passes as a defect rather than a convenience.**
+
+**A neighbour the baseline screen cannot see: an absence assertion that cannot fail against its own defect.** The fit to Shape 1 is not exact. The row asserted that, after connect, a warning arrives as a logging notification and the child's stderr holds no copy of it.[^issue86] That row is *meant* to pass on the untouched checkout, because the old code never wrote stderr before connect and the fix is meant to leave the post-connect path stderr-free,[^adr0031] so the baseline screen finds nothing wrong. The defect was in the test beneath it: it read stderr the moment the notification arrived, but stderr is a separate pipe from the stdout carrying the notification, so a duplicate written by a faulty implementation landed after the read. Against a mutant that wrote stderr unconditionally, the test **passed**.[^issue86] Shape 1's cure, running the baseline on the old tree, would not have caught it; only a mutation control did, and the issue's control table records the arms: as committed pass, the old code pass (correct, there is no duplicate to find), the mutant fail once the test waited a bounded second for the line before asserting its absence.[^issue86] What the two cases share is the result: a green that cannot be told from a green earned. What differs is where the defect sits, in the check's timing rather than its threshold. **An absence assertion over a second channel needs a bounded wait for the thing it denies, and a control that supplies the defect.**
 
 ## Shape 2 — the corpus narrower than the property
 
@@ -71,6 +80,8 @@ Three things make it worth separating from Shape 1. The row graded **red**, not 
 
 The repair was to replace the one-step invocation with the four-step control the script actually requires — inject, grep-confirm the injection landed, run, then revert and grep-confirm clean — which is *more* procedure reaching the same protected property, not less.[^issue81] A guard was then added so the mistake costs a second rather than a full dependency install, and it deliberately checks that the operator injected rather than injecting for them: auto-applying would dissolve the grep-confirm step the design rests on.[^adr0030]
 
+**Two siblings from a third issue, wrong when written rather than decayed.** Issue #86's rows R8 and R10 were among those added at planning, and the issue records each as "defective: never true as written".[^issue86] R10 pledged `npm run validate`, which was not an npm script in the repo at the time (`npm error Missing script: "validate"`); the gate meant was the `commands.validate` composition in `.gvt-agent.json`, so the row's procedure could not pass, which is Shape 4's definition. It lacks Shape 4's costume: the failure was loud and named the missing script, so it did not read as a finding about the code. A later commit on the branch added a real `validate` script, so the amendment describes the repo as it was.[^issue86] R8 is not a Shape 4 case, because its literal could be satisfied: it pledged an index line ending `(#86)`, but every Decision Records line in `wiki/index.md` ends `(issue #N)`, so meeting the literal would have broken the index's own convention.[^issue86] Neither fits Shapes 1 to 3; both were corrected in the open with the protected requirement restated and only the literal changed. Running each row's own command and comparing each literal against the file it targets, before pledging, would have exposed both.
+
 ## The fourth failure: rules that are real, built, and ungradeable
 
 Not a defective row — an **absent** one. A code review of the finished branch found two defects turning on behaviour that no row covered: a guard that must apply wherever more than one project can be registered, and a uniqueness rule on projects' output directories. Both were designed, both implemented, neither gradeable.[^issue77]
@@ -90,7 +101,7 @@ The eight defects were found by four different readers, and the distribution is 
 | Implementer, during the task | Rows that cannot be satisfied as written | Is the first to *try*, and discovers unimplementable or unfalsifiable ones |
 | Code review, after completion | Behaviours with no row | Reads the code rather than the checklist, so absence is visible |
 
-Two of the eight were found only because implementers tried to satisfy rows literally and could not — one row asserted a mechanism that could not be built, another was unsatisfiable for two tools whose output carries an incrementing counter.[^issue77] Neither is reachable by re-reading the checklist; both required an attempt.
+In issue #86 the orchestrator caught both born-wrong rows during execution, not in a pre-execution re-derivation, and it caught the vacuous absence assertion only by running a mutation control.[^issue86] Two of the eight in issue #77 were found only because implementers tried to satisfy rows literally and could not — one row asserted a mechanism that could not be built, another was unsatisfiable for two tools whose output carries an incrementing counter.[^issue77] Neither is reachable by re-reading the checklist; both required an attempt.
 
 ## What this does not argue
 
@@ -104,4 +115,6 @@ The same asymmetry ADR 0026 records for observation-gated tests applies here: a 
 [^adr0028]: ADR 0028 — the decision record produced by the same work; its declines section records the reasoning the criteria were written against.
 [^adr0026]: ADR 0026 — establishes that an assertion which fires only when a defect appears is indistinguishable from one that never fires because its subject is dead.
 [^issue81]: Issue #81 — the pledged checklist carrying two inline correction records, one written before execution and one during it; the second is the Shape 4 instance, recorded with its original wording, the defect, and the evidence that settled it.
+[^issue86]: Issue #86 — the pledged checklist, the control table for R1 and R2 (including the note that R2 was vacuous as first written), and the R8 and R10 correction records.
+[^adr0031]: ADR 0031 — the decision record produced by the same work; it records the stderr fallback whose absence on the notification path R2 asserts.
 [^adr0030]: ADR 0030 — the decision record produced by the same work; the branch that produced it also corrected the project summary whose compression of the script header seeded the defective row, and added the fail-fast guard.

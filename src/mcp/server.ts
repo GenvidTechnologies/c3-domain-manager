@@ -65,7 +65,16 @@ export const expectedChanges = new ExpectedChanges();
 // Not exported directly (see the B1 grep contract this declaration is pinned
 // by) — re-exported via the `export { emitLog }` statement below instead, so
 // cli.ts can inject it into buildRegistry's `emit` option.
+//
+// Before `server.connect` there is no client to notify: `sendLoggingMessage`
+// rejects with `Not connected` and the `.catch` below would swallow the line,
+// so pre-connect emits (each context's watcher start/baseline lines) fall back
+// to stderr instead — see wiki/decisions/0031-pre-connect-log-stderr-fallback.md.
 function emitLog(level: "debug" | "info" | "warning" | "error", message: string): void {
+  if (!server.isConnected()) {
+    console.error(`[c3-domain-manager] ${level}: ${message}`);
+    return;
+  }
   server.sendLoggingMessage({ level, logger: "c3-domain-manager", data: message }).catch(() => {});
 }
 export { emitLog };

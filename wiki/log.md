@@ -14,6 +14,19 @@ the append-only guarantee holds exactly as before. If a past entry itself needs
 correcting, add a new entry that says so; never edit or remove the old one in
 place. See `wiki/schema.md` for the full maintenance schema.
 
+## 2026-10-19
+
+* **Update**: `acceptance-criteria-failure-modes.md` — folded in issue #86 and
+  [ADR 0031](decisions/0031-pre-connect-log-stderr-fallback.md). Shape 1 gains
+  a neighbouring case (an absence assertion that passed against its own
+  defect, caught only by a mutation control; not an exact Shape 1 fit, since
+  the row was meant to pass on the old code). Shape 4 gains two siblings,
+  R10 (a command that did not exist at the time) and R8 (a literal that would
+  have broken the index convention). "Who catches which" notes that the
+  orchestrator caught all three. Description, index line, `sources[]`,
+  `generated.at` and `stale_after` refreshed. No `raw/` capture; sources are
+  in-repo records and the issue.
+
 ## 2026-09-19
 
 - Updated **acceptance-criteria-failure-modes.md** — added **Shape 4**, a row

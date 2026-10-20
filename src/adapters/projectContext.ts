@@ -63,6 +63,33 @@ export interface ProjectContextOptions {
   expected: ExpectedChanges;
 }
 
+function renderLogArg(a: unknown): string {
+  if (typeof a === "string") return a;
+  if (a instanceof Error) return a.message;
+  if (Array.isArray(a)) return a.map(renderLogArg).join(", ");
+  try {
+    return JSON.stringify(a) ?? String(a);
+  } catch {
+    return String(a);
+  }
+}
+
+/**
+ * Render the watcher logger's arguments as one line. Strings pass through
+ * verbatim and arrays are flattened, so a path is never JSON-escaped (a
+ * Windows `C:\a\b` stays single-backslashed). The whole render sits in one
+ * try: an argument whose `JSON.stringify` and `String()` both throw (e.g. a
+ * cyclic null-prototype object) yields a constant fallback rather than
+ * escaping into the watcher (ADR 0031).
+ */
+export function renderLogArgs(args: readonly unknown[]): string {
+  try {
+    return args.map(renderLogArg).join(" ");
+  } catch {
+    return "(unrenderable log arguments)";
+  }
+}
+
 export class ProjectContext {
   readonly #id: string;
   readonly #root: string;
@@ -118,20 +145,16 @@ export class ProjectContext {
       },
       // Surface the watcher's own diagnostics as debug-level, [id]-prefixed
       // log notifications, so suppression decisions are observable per project.
+      // The per-event lines pass the watch key as its own argument; it is shown
+      // as the config file's basename, since the [id] prefix already names the
+      // project and the absolute root is noise there. Only top-level arguments
+      // are mapped: the once-per-start line passes configPath inside its
+      // watchDirs array, so it keeps its full path (ADR 0031).
       logger: (...args: unknown[]) => {
+        const shown = path.basename(this.#configPath);
         this.#log(
           "debug",
-          args
-            .map((a) => {
-              if (typeof a === "string") return a;
-              if (a instanceof Error) return a.message;
-              try {
-                return JSON.stringify(a) ?? String(a);
-              } catch {
-                return String(a);
-              }
-            })
-            .join(" "),
+          renderLogArgs(args.map((a) => (a === this.#configWatchKey ? shown : a))),
         );
       },
       onExternalChange: () => {
