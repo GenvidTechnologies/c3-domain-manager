@@ -14,7 +14,9 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
   `eventSheets/`, `layouts/`, `objectTypes/` or `families/` section is no
   longer listed by `list-uncategorized` or indexed in the domain index. The
   inert-override report (part of `list-stale-overrides`) gives an override key named
-  `.json` an empty-stem reason instead of treating it as a live file.
+  `.json` an empty-stem reason instead of treating it as a live file, and a
+  key whose stem ends in a backslash (possible only on POSIX) its own reason
+  instead of the false "has no .json extension".
 
 ## [0.11.2] - 2026-10-20
 
