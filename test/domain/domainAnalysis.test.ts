@@ -189,6 +189,66 @@ describe("domainAnalysis", () => {
       }
     });
 
+    it("R3 — a file named exactly .json gets an empty-stem reason, not the missing-extension reason (stray.txt keeps it)", () => {
+      createFile(tmpDir, "layouts/.json");
+      createFile(tmpDir, "eventSheets/.json");
+      createFile(tmpDir, "eventSheets/Orphan/stray.txt");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "layouts/.json": "Auth",
+            "eventSheets/.json": "Auth",
+            "eventSheets/Orphan/stray.txt": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const empty = result.find((r) => r.key === "layouts/.json");
+      assert.isDefined(empty);
+      assert.include(empty!.reason, "empty stem");
+      assert.notInclude(empty!.reason, "has no .json extension");
+
+      const emptySheet = result.find((r) => r.key === "eventSheets/.json");
+      assert.isDefined(emptySheet);
+      assert.include(emptySheet!.reason, "empty stem");
+      assert.notInclude(emptySheet!.reason, "has no .json extension");
+
+      // Positive control: the missing-extension reason still applies to a
+      // genuinely extension-less key.
+      const stray = result.find((r) => r.key === "eventSheets/Orphan/stray.txt");
+      assert.isDefined(stray);
+      assert.include(stray!.reason, "has no .json extension");
+    });
+
+    it("R3b — a stem ending in a backslash gets its own reason, not the missing-extension reason (observation-gated: needs a filesystem that allows backslash in names)", () => {
+      const BS = String.fromCharCode(92);
+      const name = "foo" + BS + ".json";
+      fs.mkdirSync(path.join(tmpDir, "layouts"), { recursive: true });
+      try {
+        fs.writeFileSync(path.join(tmpDir, "layouts", name), "");
+      } catch {
+        /* Windows rejects or reinterprets the name; handled by the observation below */
+      }
+      const entries = fs.readdirSync(path.join(tmpDir, "layouts"));
+      if (entries.length !== 1 || entries[0] !== name) {
+        // console.warn, not .log/.debug: test/setup.ts silences the latter two.
+        console.warn(
+          "filesystem did not preserve a backslash in a filename (Windows); skipping the backslash-stem assertions",
+        );
+        return;
+      }
+
+      const key = "layouts/" + name;
+      const config = makeConfig({ Auth: { description: "Auth" } }, { overrides: { [key]: "Auth" } });
+      const found = listInertOverrides(tmpDir, config).find((r) => r.key === key);
+      assert.isDefined(found);
+      assert.include(found!.reason, "stem ending in a backslash");
+      assert.notInclude(found!.reason, "has no .json extension");
+    });
+
     it("T3 — case-sensitivity: .JSON is not admitted, lowercase .json is (positive control)", () => {
       createFile(tmpDir, "layouts/Main/Data.JSON");
       createFile(tmpDir, "layouts/Main/Data.json");
@@ -592,6 +652,23 @@ describe("domainAnalysis", () => {
         "layouts/Orphan/Real.json",
         "objectTypes/Orphan/Real.json",
       ]);
+    });
+
+    it("R4 — a file named exactly .json (empty stem) is not listed in layouts/ or eventSheets/, while sibling Main/Real.json files are (positive control)", () => {
+      createFile(tmpDir, "layouts/.json");
+      createFile(tmpDir, "layouts/Main/Real.json");
+      createFile(tmpDir, "eventSheets/.json");
+      createFile(tmpDir, "eventSheets/Main/Real.json", "{}");
+
+      const config = makeConfig({
+        Auth: { description: "Auth" },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.notInclude(result, "layouts/.json");
+      assert.include(result, "layouts/Main/Real.json");
+      assert.notInclude(result, "eventSheets/.json");
+      assert.include(result, "eventSheets/Main/Real.json");
     });
 
   });
