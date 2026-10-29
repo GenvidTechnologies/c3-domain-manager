@@ -8,6 +8,14 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+### Changed
+- Bump `@genvidtech/c3source` floor to `^3.0.0` (#89). Its `isSectionItemName`
+  now requires a non-empty stem, so a file named exactly `.json` in an
+  `eventSheets/`, `layouts/`, `objectTypes/` or `families/` section is no
+  longer listed by `list-uncategorized` or indexed in the domain index. The
+  inert-override report (part of `list-stale-overrides`) gives an override key named
+  `.json` an empty-stem reason instead of treating it as a live file.
+
 ## [0.11.2] - 2026-10-20
 
 ### Fixed
