@@ -189,6 +189,33 @@ describe("domainAnalysis", () => {
       }
     });
 
+    it("R3 — a file named exactly .json gets an empty-stem reason, not the missing-extension reason (stray.txt keeps it)", () => {
+      createFile(tmpDir, "layouts/.json");
+      createFile(tmpDir, "eventSheets/Orphan/stray.txt");
+
+      const config = makeConfig(
+        { Auth: { description: "Auth" } },
+        {
+          overrides: {
+            "layouts/.json": "Auth",
+            "eventSheets/Orphan/stray.txt": "Auth",
+          },
+        },
+      );
+
+      const result = listInertOverrides(tmpDir, config);
+      const empty = result.find((r) => r.key === "layouts/.json");
+      assert.isDefined(empty);
+      assert.include(empty!.reason, "empty stem");
+      assert.notInclude(empty!.reason, "has no .json extension");
+
+      // Positive control: the missing-extension reason still applies to a
+      // genuinely extension-less key.
+      const stray = result.find((r) => r.key === "eventSheets/Orphan/stray.txt");
+      assert.isDefined(stray);
+      assert.include(stray!.reason, "has no .json extension");
+    });
+
     it("T3 — case-sensitivity: .JSON is not admitted, lowercase .json is (positive control)", () => {
       createFile(tmpDir, "layouts/Main/Data.JSON");
       createFile(tmpDir, "layouts/Main/Data.json");
@@ -592,6 +619,19 @@ describe("domainAnalysis", () => {
         "layouts/Orphan/Real.json",
         "objectTypes/Orphan/Real.json",
       ]);
+    });
+
+    it("R4 — a file named exactly .json (empty stem) is not listed, while its sibling Main/Real.json is (positive control)", () => {
+      createFile(tmpDir, "layouts/.json");
+      createFile(tmpDir, "layouts/Main/Real.json");
+
+      const config = makeConfig({
+        Auth: { description: "Auth" },
+      });
+
+      const result = listUncategorized(tmpDir, config);
+      assert.notInclude(result, "layouts/.json");
+      assert.include(result, "layouts/Main/Real.json");
     });
 
   });

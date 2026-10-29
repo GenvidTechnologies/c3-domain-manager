@@ -264,6 +264,18 @@ export function listInertOverrides(
     // property of the predicate, not of this call site.
     const admits = fileType === "script" ? isScriptSourceName : isSectionItemName;
     if (!admits(basename)) {
+      // c3source 3.0.0's isSectionItemName rejects an empty stem, so a file
+      // named exactly `.json` fails admission although it does end in `.json`;
+      // the missing-extension message below would be false for it.
+      if (fileType !== "script" && basename === ".json") {
+        results.push({
+          key,
+          reason:
+            `'.json' has an empty stem; the ${root} walk only admits a named section ` +
+            `item, so this key can never be produced.`,
+        });
+        continue;
+      }
       results.push({
         key,
         reason:
