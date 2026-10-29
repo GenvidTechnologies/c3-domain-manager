@@ -8,6 +8,8 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-29
+
 ### Changed
 - Bump `@genvidtech/c3source` floor to `^3.0.0` (#89). Its `isSectionItemName`
   now requires a non-empty stem, so a file named exactly `.json` in an
