@@ -1,5 +1,6 @@
 ---
 type: reference
+stale_after: 2027-02-02
 description: Per-release adoption history of the two first-party dependencies, @genvidtech/c3source and @genvidtech/mcp-utils — what each floor is load-bearing for, and what was adopted, deferred, or declined and why.
 ---
 

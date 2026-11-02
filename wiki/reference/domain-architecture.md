@@ -1,5 +1,6 @@
 ---
 type: reference
+stale_after: 2026-12-02
 ---
 
 # Domain Architecture

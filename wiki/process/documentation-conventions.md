@@ -1,5 +1,6 @@
 ---
 type: practice-note
+stale_after: 2027-01-29
 ---
 
 # Documentation Conventions

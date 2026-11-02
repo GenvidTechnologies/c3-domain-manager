@@ -1,5 +1,6 @@
 ---
 type: practice-note
+stale_after: 2026-12-15
 ---
 
 # Releasing
