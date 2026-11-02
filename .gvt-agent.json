@@ -37,6 +37,7 @@
     "docs/TOC.md": "wiki/index.md",
     "docs/decisions/": "wiki/decisions/",
     "docs/wiki-schema.md": "wiki/schema.md",
-    "docs/issue-triage.md": "wiki/process/issue-triage.md"
+    "docs/issue-triage.md": "wiki/process/issue-triage.md",
+    "docs/architecture.md": "wiki/reference/domain-architecture.md"
   }
 }
