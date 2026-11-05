@@ -8,6 +8,23 @@ This project is pre-1.0, so a **minor** bump is the breaking-change vehicle
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-05
+
+### Changed
+- Bump `@genvidtech/c3source` floor to `^4.0.0` (#95). Its section walks no
+  longer follow a symbolic link or junction below a section root, so a file
+  reached only through a link in `eventSheets/`, `layouts/`, `objectTypes/` or
+  `families/` is no longer listed by `list-uncategorized` or indexed in the
+  domain index. A section root that is itself a link is still followed.
+- The `scripts/` walk follows the same rule: a link below `scripts/` is
+  neither listed nor indexed, and a dangling link there no longer makes the
+  walk fail with `ENOENT` (ADR 0032).
+- The inert-override report (part of `list-stale-overrides`) gives an override
+  key reached through a link below its section root a link reason, naming the
+  link. Such a key was previously reported as neither stale nor inert, although
+  it could never apply. A key naming a dangling link is still reported stale.
+- Bump `@genvidtech/mcp-utils` floor to `^0.13.0` (#94). No behaviour change.
+
 ## [0.12.0] - 2026-10-29
 
 ### Changed
@@ -396,7 +413,10 @@ There is also a stray unprefixed `0.1.0` tag (dated 2026-04-03, predating the
 `v`-prefixed `v0.1.0` tag above) left over from before the tag naming
 convention was adopted; it does not correspond to a separate release.
 
-[Unreleased]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/GenvidTechnologies/c3-domain-manager/compare/v0.10.0...v0.10.1
