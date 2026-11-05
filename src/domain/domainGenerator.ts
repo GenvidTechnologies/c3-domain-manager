@@ -163,7 +163,13 @@ export function findScriptEntries(
     const siblingNames = new Set(names);
     for (const name of names) {
       const fullPath = path.join(dir, name);
-      const stats = fs.statSync(fullPath);
+      // lstat, not stat: a symbolic link or junction below the walk root is
+      // neither followed nor returned, matching the link policy c3source 4.0.0
+      // applies to the other four section walks. A dangling link therefore
+      // never throws. The walk root itself may be a link and is still followed
+      // (existsSync + readdirSync above resolve it).
+      const stats = fs.lstatSync(fullPath);
+      if (stats.isSymbolicLink()) continue;
 
       if (stats.isDirectory()) {
         // isReportableScriptDir gates descent as well as emission — a claim
