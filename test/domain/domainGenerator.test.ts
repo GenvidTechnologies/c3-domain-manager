@@ -1490,6 +1490,65 @@ describe("findScriptEntries", () => {
 
     assert.deepInclude(result, { relativePath: "scripts/ts-defs/objects.d.ts", isDirectory: false });
   });
+
+  // Link tests: creation can fail on some machines (e.g. EPERM for file
+  // symlinks on Windows without developer mode). When it does, the test logs
+  // a note and passes rather than asserting on a link that was never made.
+  function tryLink(target: string, link: string, type: "junction" | "file" | "dir"): boolean {
+    try {
+      fs.symlinkSync(target, link, type);
+      return true;
+    } catch (err) {
+      console.warn(`note: could not create a ${type} link (${String(err)}); skipping assertions`);
+      return false;
+    }
+  }
+
+  it("links: a directory link below scripts/ is neither emitted nor descended", () => {
+    createFile(tmpDir, "outside/inner/x.ts");
+    createFile(scriptsDir, "main.ts");
+    // "shared" is a layer dir, so a followed link would be descended into and
+    // its children emitted; "plain" would be emitted as a collapsed entry.
+    if (!tryLink(path.join(tmpDir, "outside"), path.join(scriptsDir, "shared"), "junction")) return;
+    if (!tryLink(path.join(tmpDir, "outside"), path.join(scriptsDir, "plain"), "junction")) return;
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.deepEqual(result, [{ relativePath: "scripts/main.ts", isDirectory: false }]);
+  });
+
+  it("links: a file link below scripts/ is not emitted", () => {
+    createFile(tmpDir, "outside/target.ts");
+    createFile(scriptsDir, "main.ts");
+    if (!tryLink(path.join(tmpDir, "outside", "target.ts"), path.join(scriptsDir, "linked.ts"), "file")) return;
+
+    const result = findScriptEntries(scriptsDir);
+
+    assert.deepEqual(result, [{ relativePath: "scripts/main.ts", isDirectory: false }]);
+  });
+
+  it("links: a dangling link does not throw and is not emitted", () => {
+    createFile(scriptsDir, "main.ts");
+    const missing = path.join(tmpDir, "does-not-exist");
+    if (!tryLink(missing, path.join(scriptsDir, "dangling"), "junction")) return;
+
+    let result: ReturnType<typeof findScriptEntries> = [];
+    assert.doesNotThrow(() => {
+      result = findScriptEntries(scriptsDir);
+    });
+
+    assert.deepEqual(result, [{ relativePath: "scripts/main.ts", isDirectory: false }]);
+  });
+
+  it("links: a scripts/ root that is itself a link is followed", () => {
+    createFile(tmpDir, "realScripts/main.ts");
+    const linkRoot = path.join(tmpDir, "scriptsLink");
+    if (!tryLink(path.join(tmpDir, "realScripts"), linkRoot, "junction")) return;
+
+    const result = findScriptEntries(linkRoot);
+
+    assert.deepEqual(result, [{ relativePath: "scripts/main.ts", isDirectory: false }]);
+  });
 });
 
 describe("computeDomainData — non-.json strays in claimed section dirs (issue #52)", () => {
