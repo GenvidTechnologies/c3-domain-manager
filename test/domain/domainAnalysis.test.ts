@@ -674,6 +674,145 @@ describe("domainAnalysis", () => {
   });
 });
 
+describe("listInertOverrides / listStaleOverrides — links below a section root", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir("domainAnalysis-links-");
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  // Link creation can fail on some machines (e.g. EPERM for file symlinks on
+  // Windows without developer mode). When it does, the test logs a note and
+  // passes rather than asserting on a link that was never made.
+  function tryLink(target: string, link: string, type: "junction" | "file" | "dir"): boolean {
+    try {
+      fs.symlinkSync(target, link, type);
+      return true;
+    } catch (err) {
+      console.warn(`note: could not create a ${type} link (${String(err)}); skipping assertions`);
+      return false;
+    }
+  }
+
+  const sections = [
+    { root: "eventSheets", file: "Sheet.json" },
+    { root: "layouts", file: "Layout.json" },
+    { root: "objectTypes", file: "Obj.json" },
+    { root: "families", file: "Fam.json" },
+    { root: "scripts", file: "main.ts" },
+  ];
+
+  for (const { root, file } of sections) {
+    it(`link: a key passing through a directory link below ${root}/ is inert, naming the link`, () => {
+      createFile(tmpDir, `outside/${root}/${file}`);
+      createFile(tmpDir, `${root}/real/${file}`);
+      if (!tryLink(path.join(tmpDir, "outside", root), path.join(tmpDir, root, "linked"), "junction")) return;
+      const key = `${root}/linked/${file}`;
+      const config = makeConfig({ Core: { description: "Core" } }, { overrides: { [key]: "Core" } });
+
+      const result = listInertOverrides(tmpDir, config);
+
+      assert.lengthOf(result, 1);
+      assert.equal(result[0].key, key);
+      assert.include(result[0].reason, `'${root}/linked' is a link;`);
+      assert.deepEqual(listStaleOverrides(tmpDir, config), []);
+    });
+  }
+
+  it("link: a layouts key whose leaf is a file link is inert, naming the leaf", () => {
+    createFile(tmpDir, "outside/L.json");
+    createFile(tmpDir, "layouts/Real.json");
+    if (!tryLink(path.join(tmpDir, "outside", "L.json"), path.join(tmpDir, "layouts", "L.json"), "file")) return;
+    const config = makeConfig({ Core: { description: "Core" } }, { overrides: { "layouts/L.json": "Core" } });
+
+    const result = listInertOverrides(tmpDir, config);
+
+    assert.lengthOf(result, 1);
+    assert.equal(result[0].key, "layouts/L.json");
+    assert.include(result[0].reason, "'layouts/L.json' is a link;");
+  });
+
+  it("link: a scripts key naming a directory link is inert, naming the link", () => {
+    createFile(tmpDir, "outside/dir/x.ts");
+    createFile(tmpDir, "scripts/main.ts");
+    if (!tryLink(path.join(tmpDir, "outside", "dir"), path.join(tmpDir, "scripts", "linkdir"), "junction")) return;
+    const config = makeConfig({ Core: { description: "Core" } }, { overrides: { "scripts/linkdir": "Core" } });
+
+    const result = listInertOverrides(tmpDir, config);
+
+    assert.lengthOf(result, 1);
+    assert.equal(result[0].key, "scripts/linkdir");
+    // Without the link check this key is still inert, through the directory
+    // reason, so the assertion must name the link reason itself.
+    assert.include(result[0].reason, "'scripts/linkdir' is a link;");
+  });
+
+  it("link: a key below a section root that is itself a link is not given the link reason", () => {
+    createFile(tmpDir, "outside/layouts/L.json");
+    if (!tryLink(path.join(tmpDir, "outside", "layouts"), path.join(tmpDir, "layouts"), "junction")) return;
+    const config = makeConfig({ Core: { description: "Core" } }, { overrides: { "layouts/L.json": "Core" } });
+
+    const result = listInertOverrides(tmpDir, config);
+
+    assert.deepEqual(result, []);
+  });
+
+  it("link: links in all five sections are absent from listUncategorized and present in listInertOverrides", () => {
+    createFile(tmpDir, "eventSheets/real/Sheet.json");
+    createFile(tmpDir, "layouts/Real.json");
+    createFile(tmpDir, "objectTypes/real/Obj.json");
+    createFile(tmpDir, "families/real/Fam.json");
+    createFile(tmpDir, "scripts/real.ts");
+    createFile(tmpDir, "outside/es/Sheet.json");
+    createFile(tmpDir, "outside/L.json");
+    createFile(tmpDir, "outside/ot/Obj.json");
+    createFile(tmpDir, "outside/fam/Fam.json");
+    createFile(tmpDir, "outside/sc/x.ts");
+    const links: Array<[string, string, "junction" | "file"]> = [
+      ["outside/es", "eventSheets/linked", "junction"],
+      ["outside/L.json", "layouts/L.json", "file"],
+      ["outside/ot", "objectTypes/linked", "junction"],
+      ["outside/fam", "families/linked", "junction"],
+      ["outside/sc", "scripts/linked", "junction"],
+    ];
+    for (const [target, link, type] of links) {
+      if (!tryLink(path.join(tmpDir, target), path.join(tmpDir, link), type)) return;
+    }
+    const keys = [
+      "eventSheets/linked/Sheet.json",
+      "layouts/L.json",
+      "objectTypes/linked/Obj.json",
+      "families/linked/Fam.json",
+      "scripts/linked/x.ts",
+    ];
+    const config = makeConfig(
+      { Core: { description: "Core" } },
+      { overrides: Object.fromEntries(keys.map((k) => [k, "Core"])) },
+    );
+
+    const uncategorized = listUncategorized(tmpDir, config);
+    const inertKeys = listInertOverrides(tmpDir, config).map((r) => r.key);
+
+    for (const key of keys) {
+      assert.notInclude(uncategorized, key, `${key} must not be uncategorized`);
+      assert.include(inertKeys, key, `${key} must be inert`);
+    }
+  });
+
+  it("link: a key naming a dangling link is stale, not inert", () => {
+    createFile(tmpDir, "layouts/Real.json");
+    if (!tryLink(path.join(tmpDir, "does-not-exist"), path.join(tmpDir, "layouts", "gone"), "junction")) return;
+    const config = makeConfig({ Core: { description: "Core" } }, { overrides: { "layouts/gone": "Core" } });
+
+    assert.deepEqual(listStaleOverrides(tmpDir, config), ["layouts/gone"]);
+    assert.deepEqual(listInertOverrides(tmpDir, config), []);
+  });
+});
+
 describe("collectValidDomainNames", () => {
   it("returns domain and subdomain names", () => {
     const config: DomainConfig = {

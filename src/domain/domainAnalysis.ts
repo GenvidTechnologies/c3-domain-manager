@@ -106,7 +106,7 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  * never reported by both functions.
  *
  * The check is derivative of each section's walk rules, not one flat
- * predicate — five distinct reasons a key can be inert:
+ * predicate — six distinct reasons a key can be inert:
  *
  *   1. Editor-local (section-aware): a path segment the section's walk never
  *      descends into or admits (`uistate/`, `*.uistate.json`, `tsconfig.json`,
@@ -132,6 +132,10 @@ export function listStaleOverrides(rootDir: string, config: DomainConfig): strin
  *      structural layer directory (`LAYER_DIRS`) or one the config claims
  *      strictly below (`hasClaimBelow`) is recursed into instead, so a key
  *      naming it is inert too.
+ *   6. Link: a path segment strictly below the section root is a symbolic
+ *      link or junction. No section's walk follows or returns links below
+ *      its root. A section root that is itself a link is followed, so it
+ *      does not count. Checked before the other classes.
  */
 export function listInertOverrides(
   rootDir: string,
@@ -174,6 +178,31 @@ export function listInertOverrides(
     const segments = innerPath.split("/");
     const basename = segments[segments.length - 1];
     const dirSegments = segments.slice(0, -1);
+
+    // Class 6 — link below the section root. Every walk skips links below the
+    // root, so a key passing through or ending at one can never be produced.
+    // The root itself is not checked: a root that is a link is followed.
+    let linkSegment: string | undefined;
+    for (let i = 1; i <= segments.length; i++) {
+      const partial = root + segments.slice(0, i).join("/");
+      try {
+        if (fs.lstatSync(path.join(rootDir, partial)).isSymbolicLink()) {
+          linkSegment = partial;
+          break;
+        }
+      } catch {
+        break; // Unreadable segment: leave the key to the classes below.
+      }
+    }
+    if (linkSegment !== undefined) {
+      results.push({
+        key,
+        reason:
+          `'${linkSegment}' is a link; the ${root} walk neither follows nor returns links ` +
+          `below its root, so this key can never be produced.`,
+      });
+      continue;
+    }
 
     // Class 1 — editor-local, section-aware. Directory segments: scripts/
     // exempts ts-defs/ (isReportableScriptDir); the other four sections don't
