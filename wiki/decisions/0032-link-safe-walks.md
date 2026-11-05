@@ -8,7 +8,7 @@ type: decision-record
 **Date:** 2026-11-05
 **Issue:** #95 — adopt `@genvidtech/c3source` 4.0.0 (upstream
 `GenvidTechnologies/c3source#114`); shipped together with #94, the
-`@genvidtech/mcp-utils` 0.13.0 bump, which carries the acceptance criteria
+`@genvidtech/mcp-utils` 0.13.0 bump
 
 ---
 
@@ -47,7 +47,9 @@ a section root, and a section root that is itself a link is followed.
 - **`listInertOverrides` gains a sixth reason, link.** It checks each path
   segment strictly below the section root with `lstatSync` and reports the first
   link found. The check runs before the other reasons, and the root itself is not
-  checked.
+  checked. A `.` or empty segment names no new entry and is skipped, so it cannot
+  turn a root that is a link into a link below the root; a `..` segment leaves
+  the section and ends the check.
 - **`listStaleOverrides` is unchanged.** A dangling link fails `existsSync`, so
   a key through one stays stale. The two lists remain disjoint.
 
@@ -77,8 +79,9 @@ reasons, so a key is never reported as a link on a guess.
   pass where the filesystem refuses to create a link. On Windows,
   `lstatSync().isSymbolicLink()` was true for a junction, a directory symlink, a
   file symlink and a dangling junction.
-- **Mutation evidence** that the new tests discriminate (a `statSync` mutant in
-  `findScriptEntries`, a disabled link reason in `listInertOverrides`) is
-  recorded in issue #94.
+- **The new tests discriminate.** With `findScriptEntries` mutated back to
+  `statSync`, 3 of its 73 tests failed on their assertions (the directory, file
+  and dangling-link cases). With the link reason in `listInertOverrides`
+  disabled, 8 of its 56 tests failed. The details are in issue #94.
 - The adoption record for the bump is in
   `wiki/reference/key-dependencies.md`.

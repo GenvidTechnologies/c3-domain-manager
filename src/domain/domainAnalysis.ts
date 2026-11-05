@@ -184,6 +184,13 @@ export function listInertOverrides(
     // The root itself is not checked: a root that is a link is followed.
     let linkSegment: string | undefined;
     for (let i = 1; i <= segments.length; i++) {
+      // A "." or empty segment names no new entry: path.join would collapse
+      // the prefix back onto the previous one (at i = 1, the root itself,
+      // which may legitimately be a link). A ".." segment leaves the
+      // section, so stop and leave the key to the classes below.
+      const seg = segments[i - 1];
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") break;
       const partial = root + segments.slice(0, i).join("/");
       try {
         if (fs.lstatSync(path.join(rootDir, partial)).isSymbolicLink()) {

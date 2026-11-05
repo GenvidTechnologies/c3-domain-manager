@@ -761,6 +761,19 @@ describe("listInertOverrides / listStaleOverrides — links below a section root
     assert.deepEqual(result, []);
   });
 
+  it("link: a '.' or empty segment does not make a link root count as a link below the root", () => {
+    createFile(tmpDir, "outside/layouts/L.json");
+    if (!tryLink(path.join(tmpDir, "outside", "layouts"), path.join(tmpDir, "layouts"), "junction")) return;
+    const config = makeConfig(
+      { Core: { description: "Core" } },
+      { overrides: { "layouts/./L.json": "Core", "layouts//L.json": "Core" } },
+    );
+
+    const result = listInertOverrides(tmpDir, config);
+
+    for (const r of result) assert.notInclude(r.reason, "is a link;", `${r.key}: ${r.reason}`);
+  });
+
   it("link: links in all five sections are absent from listUncategorized and present in listInertOverrides", () => {
     createFile(tmpDir, "eventSheets/real/Sheet.json");
     createFile(tmpDir, "layouts/Real.json");
